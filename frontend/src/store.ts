@@ -1,0 +1,94 @@
+import { create } from 'zustand'
+import type {
+  Beat,
+  Concept,
+  NodeSummary,
+  ProjectData,
+  Relation,
+  RelationsBoardItem,
+  Storyline,
+  Volume,
+  WhiteboardItem,
+} from './types'
+
+export type Page = 'nodes' | 'whiteboard' | 'concepts' | 'characters' | 'relations' | 'export' | 'settings'
+
+export interface CurrentNode {
+  id: string
+  title: string
+  beats: Beat[]
+}
+
+interface AppState {
+  projectPath: string | null
+  projectName: string
+  concepts: Concept[]
+  relations: Relation[]
+  storylines: Storyline[]
+  volumes: Volume[]
+  whiteboard: WhiteboardItem[]
+  relationsBoard: RelationsBoardItem[]
+  nodes: NodeSummary[]
+  activePage: Page
+  currentNodeId: string | null
+  currentNode: CurrentNode | null
+  currentVolumeId: string | null
+  ready: boolean
+
+  setProject: (data: ProjectData, path: string) => void
+  setActivePage: (p: Page) => void
+  setCurrentNodeId: (id: string | null) => void
+  setCurrentVolumeId: (id: string | null) => void
+  setCurrentNode: (n: CurrentNode | null) => void
+  patchCurrentNode: (patch: Partial<CurrentNode>) => void
+  patchConcepts: (concepts: Concept[], relations: Relation[]) => void
+  patchStorylines: (storylines: Storyline[]) => void
+  patchVolumes: (volumes: Volume[]) => void
+  patchWhiteboard: (whiteboard: WhiteboardItem[]) => void
+  patchRelationsBoard: (relationsBoard: RelationsBoardItem[]) => void
+  patchNodes: (nodes: NodeSummary[]) => void
+}
+
+export const useStore = create<AppState>((set) => ({
+  projectPath: null,
+  projectName: '',
+  concepts: [],
+  relations: [],
+  storylines: [],
+  volumes: [],
+  whiteboard: [],
+  relationsBoard: [],
+  nodes: [],
+  activePage: 'nodes',
+  currentNodeId: null,
+  currentNode: null,
+  currentVolumeId: null,
+  ready: false,
+
+  setProject: (data, path) =>
+    set({
+      projectPath: path,
+      projectName: data.project.name,
+      concepts: data.concepts.concepts,
+      relations: data.concepts.relations,
+      storylines: data.storylines.storylines,
+      volumes: data.volumes,
+      whiteboard: data.whiteboard.items,
+      relationsBoard: data.relationsBoard.items,
+      nodes: data.nodes,
+      currentNodeId: data.nodes[0]?.id ?? null,
+      ready: true,
+      activePage: 'nodes',
+    }),
+  setActivePage: (p) => set({ activePage: p }),
+  setCurrentNodeId: (id) => set({ currentNodeId: id }),
+  setCurrentVolumeId: (id) => set({ currentVolumeId: id }),
+  setCurrentNode: (n) => set({ currentNode: n }),
+  patchCurrentNode: (patch) => set((s) => (s.currentNode ? { currentNode: { ...s.currentNode, ...patch } } : {})),
+  patchConcepts: (concepts, relations) => set({ concepts, relations }),
+  patchStorylines: (storylines) => set({ storylines }),
+  patchVolumes: (volumes) => set({ volumes }),
+  patchWhiteboard: (whiteboard) => set({ whiteboard }),
+  patchRelationsBoard: (relationsBoard) => set({ relationsBoard }),
+  patchNodes: (nodes) => set({ nodes }),
+}))
