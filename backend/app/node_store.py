@@ -174,8 +174,22 @@ def delete_node(node_id):
     from . import storyline_store
 
     for sl in storyline_store.list_storylines():
+        next_sl = dict(sl)
+        changed = False
         if node_id in (sl.get("nodes") or []):
-            storyline_store.update_storyline(sl["id"], {**sl, "nodes": [n for n in sl["nodes"] if n != node_id]})
+            next_sl["nodes"] = [n for n in sl["nodes"] if n != node_id]
+            changed = True
+        edges = sl.get("edges") or []
+        if edges:
+            kept = [e for e in edges if e.get("from") != node_id and e.get("to") != node_id]
+            if len(kept) != len(edges):
+                next_sl["edges"] = kept
+                changed = True
+        if sl.get("start") == node_id:
+            next_sl["start"] = None
+            changed = True
+        if changed:
+            storyline_store.update_storyline(sl["id"], next_sl)
     ps.touch_project()
 
 

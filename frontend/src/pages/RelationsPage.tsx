@@ -2,17 +2,21 @@ import { useEffect, useMemo, useState } from 'react'
 import {
   Background,
   Controls,
+  Handle,
   MarkerType,
+  Position,
   ReactFlow,
   useEdgesState,
   useNodesState,
   type Connection,
   type Edge,
   type Node,
+  type NodeProps,
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import { api, errorMessage } from '../api'
 import { useStore } from '../store'
+import { useDialog } from '../components/Dialog'
 import type { Concept } from '../types'
 
 const inputCls =
@@ -22,6 +26,52 @@ type Menu =
   | { kind: 'node'; x: number; y: number; nodeId: string }
   | { kind: 'edge'; x: number; y: number; edgeId: string }
   | { kind: 'pane'; x: number; y: number }
+
+// 8 handle positions around a 120×120 circle (cardinal + 4 diagonals).
+const HANDLE_SPOTS: { id: string; top: string; left: string }[] = [
+  { id: 'top', top: '0%', left: '50%' },
+  { id: 'right', top: '50%', left: '100%' },
+  { id: 'bottom', top: '100%', left: '50%' },
+  { id: 'left', top: '50%', left: '0%' },
+  { id: 'tl', top: '14.6%', left: '14.6%' },
+  { id: 'tr', top: '14.6%', left: '85.4%' },
+  { id: 'bl', top: '85.4%', left: '14.6%' },
+  { id: 'br', top: '85.4%', left: '85.4%' },
+]
+
+function CharacterNode({ data }: NodeProps) {
+  const d = data as { label: string; color: string }
+  return (
+    <div className="relative" style={{ width: 120, height: 120 }}>
+      <div
+        className="w-full h-full rounded-full flex items-center justify-center text-center px-3 bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-100"
+        style={{ border: `2px solid ${d.color}`, fontSize: 14 }}
+      >
+        <span className="leading-tight break-words">{d.label}</span>
+      </div>
+      {HANDLE_SPOTS.map((h) => (
+        <Handle
+          key={h.id}
+          id={h.id}
+          type="source"
+          position={Position.Top}
+          style={{ top: h.top, left: h.left, transform: 'translate(-50%, -50%)' }}
+        />
+      ))}
+      {HANDLE_SPOTS.map((h) => (
+        <Handle
+          key={`${h.id}-t`}
+          id={`${h.id}-t`}
+          type="target"
+          position={Position.Top}
+          style={{ top: h.top, left: h.left, transform: 'translate(-50%, -50%)', width: 24, height: 24, opacity: 0 }}
+        />
+      ))}
+    </div>
+  )
+}
+
+const nodeTypes = { character: CharacterNode }
 
 export function RelationsPage() {
   const concepts = useStore((s) => s.concepts)
@@ -45,6 +95,7 @@ export function RelationsPage() {
   const [clipboard, setClipboard] = useState<string | null>(null)
   const [flowNodes, setFlowNodes, onNodesChange] = useNodesState<Node>([])
   const [flowEdges, setFlowEdges, onEdgesChange] = useEdgesState<Edge>([])
+  const { alert, confirm, prompt } = useDialog()
 
   const selected = characters.find((c) => c.id === selectedId) ?? null
 
@@ -53,16 +104,9 @@ export function RelationsPage() {
       const existing = new Map(current.map((n) => [n.id, n]))
       return characters.map((c, i) => ({
         id: c.id,
-        position: existing.get(c.id)?.position ?? charPos.get(c.id) ?? { x: (i % 4) * 190 + 40, y: Math.floor(i / 4) * 120 + 40 },
-        data: { label: c.name },
-        style: {
-          border: `2px solid ${c.color}`,
-          borderRadius: 8,
-          background: '#ffffff',
-          color: '#1f2937',
-          width: 130,
-          fontSize: 14,
-        },
+        type: 'character',
+        position: existing.get(c.id)?.position ?? charPos.get(c.id) ?? { x: (i % 4) * 190 + 40, y: Math.floor(i / 4) * 150 + 40 },
+        data: { label: c.name, color: c.color },
       }))
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -92,7 +136,7 @@ export function RelationsPage() {
 
   async function onConnect(conn: Connection) {
     if (!conn.source || !conn.target) return
-    const label = window.prompt('关系（显示在连线上）', '')
+    const label = await prompt('关系（显示在连线上）', '')
     if (label === null) return
     const next = [...relations, { from: conn.source, to: conn.target, label }]
     await api.saveRelations(next)
@@ -106,7 +150,7 @@ export function RelationsPage() {
   async function onEdgeDoubleClick(_: unknown, edge: Edge) {
     const rel = findRelation(edge)
     if (!rel) return
-    const label = window.prompt('编辑关系（留空则删除）', rel.label)
+    const label = await prompt('编辑关系（留空则删除）', rel.label)
     if (label === null) return
     const next =
       label.trim() === ''
@@ -132,7 +176,7 @@ export function RelationsPage() {
   }
 
   async function deleteCharacter(id: string) {
-    if (!window.confirm('删除该人物概念？')) return
+    if (!(await confirm('删除该人物概念？'))) return
     await api.deleteConcept(id)
     await refresh()
   }
@@ -165,7 +209,7 @@ export function RelationsPage() {
       await api.updateConcept(selectedId, draft)
       await refresh()
     } catch (e) {
-      window.alert(errorMessage(e))
+      await alert(errorMessage(e))
     }
   }
 
@@ -184,6 +228,7 @@ export function RelationsPage() {
         <ReactFlow
           nodes={flowNodes}
           edges={flowEdges}
+          nodeTypes={nodeTypes}
           onNodesChange={onNodesChange}
           onEdgesChange={onEdgesChange}
           onConnect={onConnect}
@@ -243,7 +288,7 @@ export function RelationsPage() {
                 <button
                   onClick={() => {
                     if (clipboard) duplicateCharacter(clipboard)
-                    else window.alert('请先右键某个人物选择「复制」')
+                    else void alert('请先右键某个人物选择「复制」')
                     setMenu(null)
                   }}
                   className="block w-full text-left px-4 py-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 dark:text-gray-200"

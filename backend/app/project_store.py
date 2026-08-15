@@ -12,10 +12,18 @@ RELATIONS_FILE = "relations.json"
 WHITEBOARD_FILE = "whiteboard.json"
 RELATIONS_BOARD_FILE = "relations-board.json"
 NODES_DIR = "nodes"
+EXPORT_SETTINGS_FILE = "export-settings.json"
 
 # Legacy (pre-folder) files, kept only for one-time migration.
 LEGACY_CONCEPTS_FILE = "concepts.json"
 LEGACY_STORYLINES_FILE = "storylines.json"
+
+DEFAULT_EXPORT_SETTINGS = {
+    "indentParagraph": True,
+    "paragraphGap": 0,
+    "chapterHeadBlank": 0,
+    "chapterTailBlank": 0,
+}
 
 
 class ProjectError(Exception):
@@ -52,6 +60,15 @@ def write_json_file(filename, data):
     fp = os.path.join(get_current_path(), filename)
     with open(fp, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
+
+
+def read_export_settings():
+    return read_json_file(EXPORT_SETTINGS_FILE, dict(DEFAULT_EXPORT_SETTINGS))
+
+
+def write_export_settings(data):
+    write_json_file(EXPORT_SETTINGS_FILE, data)
+    return read_export_settings()
 
 
 def safe_filename(name):
@@ -111,6 +128,7 @@ def create_project(path, name):
     write_json_file(RELATIONS_FILE, {"relations": []})
     write_json_file(WHITEBOARD_FILE, {"items": []})
     write_json_file(RELATIONS_BOARD_FILE, {"items": []})
+    write_json_file(EXPORT_SETTINGS_FILE, dict(DEFAULT_EXPORT_SETTINGS))
     return load_project()
 
 
@@ -136,6 +154,7 @@ def load_project():
         "whiteboard": board_store.read_whiteboard(),
         "relationsBoard": board_store.read_relations_board(),
         "nodes": nodes,
+        "exportSettings": read_export_settings(),
     }
 
 

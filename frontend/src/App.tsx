@@ -3,8 +3,9 @@ import { api } from './api'
 import { useStore } from './store'
 import { useSettings } from './settings'
 import { ProjectGate } from './components/ProjectGate'
+import { DialogProvider } from './components/Dialog'
 import { Sidebar } from './components/Sidebar'
-import { PreviewPane } from './components/PreviewPane'
+import { EditorPane } from './components/EditorPane'
 import { NodesPage } from './pages/NodesPage'
 import { ConceptsPage } from './pages/ConceptsPage'
 import { WhiteboardPage } from './pages/WhiteboardPage'
@@ -50,25 +51,32 @@ export default function App() {
     return () => clearInterval(id)
   }, [])
 
-  if (!ready) return <ProjectGate />
+  if (!ready)
+    return (
+      <DialogProvider>
+        <ProjectGate />
+      </DialogProvider>
+    )
 
   return (
-    <div className="flex h-full">
-      <Sidebar />
-      <div className="flex-1 flex min-w-0">
-        <div className="w-[58%] min-w-[360px] border-r border-gray-200 dark:border-gray-700 overflow-hidden flex flex-col">
-          {activePage === 'nodes' && <NodesPage />}
-          {activePage === 'whiteboard' && <WhiteboardPage />}
-          {activePage === 'concepts' && <ConceptsPage scope="concepts" />}
-          {activePage === 'characters' && <ConceptsPage scope="characters" />}
-          {activePage === 'relations' && <RelationsPage />}
-          {activePage === 'export' && <ExportPage />}
-          {activePage === 'settings' && <SettingsPage />}
-        </div>
-        <div className="flex-1 min-w-[320px] overflow-hidden flex flex-col">
-          <PreviewPane />
+    <DialogProvider>
+      <div className="flex h-full">
+        <Sidebar />
+        <div className="flex-1 flex min-w-0">
+          <div className="w-[58%] min-w-[360px] border-r border-gray-200 dark:border-gray-700 overflow-hidden flex flex-col">
+            {activePage === 'nodes' && <NodesPage />}
+            {activePage === 'whiteboard' && <WhiteboardPage />}
+            {activePage === 'concepts' && <ConceptsPage scope="concepts" />}
+            {activePage === 'characters' && <ConceptsPage scope="characters" />}
+            {activePage === 'relations' && <RelationsPage />}
+            {activePage === 'export' && <ExportPage />}
+            {activePage === 'settings' && <SettingsPage />}
+          </div>
+          <div className="flex-1 min-w-[320px] overflow-hidden flex flex-col">
+            <EditorPane />
+          </div>
         </div>
       </div>
-    </div>
+    </DialogProvider>
   )
 }

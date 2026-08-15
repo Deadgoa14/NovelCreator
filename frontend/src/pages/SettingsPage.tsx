@@ -12,6 +12,17 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
   )
 }
 
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div className="mb-4">
+      <h3 className="text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wide mb-1.5">{title}</h3>
+      <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg px-4 divide-y divide-gray-100 dark:divide-gray-700">
+        {children}
+      </div>
+    </div>
+  )
+}
+
 export function SettingsPage() {
   const s = useSettings()
 
@@ -23,7 +34,7 @@ export function SettingsPage() {
       </div>
 
       <div className="flex-1 overflow-y-auto p-4">
-        <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg px-4 divide-y divide-gray-100 dark:divide-gray-700">
+        <Section title="外观">
           <Row label="外观模式">
             <div className="flex rounded-md overflow-hidden border border-gray-300 dark:border-gray-600">
               <button
@@ -44,7 +55,9 @@ export function SettingsPage() {
               </button>
             </div>
           </Row>
+        </Section>
 
+        <Section title="白板">
           <Row label="白板展开梗概字号（px）">
             <input
               type="number"
@@ -55,7 +68,9 @@ export function SettingsPage() {
               className="w-20 text-sm border border-gray-300 rounded-md px-2 py-1.5 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-100"
             />
           </Row>
+        </Section>
 
+        <Section title="预览设置">
           <Row label="预览文字区背景色">
             <input
               type="color"
@@ -101,7 +116,7 @@ export function SettingsPage() {
               ))}
             </select>
           </Row>
-        </div>
+        </Section>
       </div>
     </div>
   )

@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import type {
   Beat,
   Concept,
+  ExportSettings,
   NodeSummary,
   ProjectData,
   Relation,
@@ -29,6 +30,7 @@ interface AppState {
   whiteboard: WhiteboardItem[]
   relationsBoard: RelationsBoardItem[]
   nodes: NodeSummary[]
+  exportSettings: ExportSettings
   activePage: Page
   currentNodeId: string | null
   currentNode: CurrentNode | null
@@ -47,6 +49,7 @@ interface AppState {
   patchWhiteboard: (whiteboard: WhiteboardItem[]) => void
   patchRelationsBoard: (relationsBoard: RelationsBoardItem[]) => void
   patchNodes: (nodes: NodeSummary[]) => void
+  patchExportSettings: (exportSettings: ExportSettings) => void
 }
 
 export const useStore = create<AppState>((set) => ({
@@ -59,6 +62,7 @@ export const useStore = create<AppState>((set) => ({
   whiteboard: [],
   relationsBoard: [],
   nodes: [],
+  exportSettings: { indentParagraph: true, paragraphGap: 0, chapterHeadBlank: 0, chapterTailBlank: 0 },
   activePage: 'nodes',
   currentNodeId: null,
   currentNode: null,
@@ -76,6 +80,7 @@ export const useStore = create<AppState>((set) => ({
       whiteboard: data.whiteboard.items,
       relationsBoard: data.relationsBoard.items,
       nodes: data.nodes,
+      exportSettings: data.exportSettings,
       currentNodeId: data.nodes[0]?.id ?? null,
       ready: true,
       activePage: 'nodes',
@@ -91,4 +96,5 @@ export const useStore = create<AppState>((set) => ({
   patchWhiteboard: (whiteboard) => set({ whiteboard }),
   patchRelationsBoard: (relationsBoard) => set({ relationsBoard }),
   patchNodes: (nodes) => set({ nodes }),
+  patchExportSettings: (exportSettings) => set({ exportSettings }),
 }))

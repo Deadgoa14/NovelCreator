@@ -1,4 +1,4 @@
-import type { Beat, Concept, NodeDetail, NodeSummary, Point, ProjectData, Relation, Storyline, Volume } from './types'
+import type { Beat, Concept, ExportSettings, NodeDetail, NodeSummary, Point, ProjectData, Relation, Storyline, Volume } from './types'
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const res = await fetch(path, {
@@ -90,6 +90,9 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ storylineId, format: 'txt', ...opts }),
     }),
+
+  saveExportSettings: (s: ExportSettings) =>
+    request<ExportSettings>('/api/export-settings', { method: 'PUT', body: JSON.stringify(s) }),
 
   shutdown: () => request<{ ok: boolean }>('/api/shutdown', { method: 'POST' }),
   heartbeat: () => request<{ ok: boolean }>('/api/heartbeat', { method: 'POST' }),

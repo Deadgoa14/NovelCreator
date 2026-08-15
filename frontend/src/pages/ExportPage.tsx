@@ -1,6 +1,7 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { api, errorMessage } from '../api'
 import { useStore } from '../store'
+import type { ExportSettings } from '../types'
 
 function GapSwitch({
   label,
@@ -40,17 +41,31 @@ function GapSwitch({
 
 export function ExportPage() {
   const storylines = useStore((s) => s.storylines)
+  const exportSettings = useStore((s) => s.exportSettings)
+  const patchExportSettings = useStore((s) => s.patchExportSettings)
   const [selectedId, setSelectedId] = useState<string>(storylines[0]?.id ?? '')
   const [content, setContent] = useState('')
   const [filename, setFilename] = useState('')
   const [charCount, setCharCount] = useState<number | null>(null)
   const [error, setError] = useState('')
-  const [indent, setIndent] = useState(true)
-  const [paragraphGap, setParagraphGap] = useState(0)
-  const [headEnabled, setHeadEnabled] = useState(false)
-  const [headLines, setHeadLines] = useState(1)
-  const [tailEnabled, setTailEnabled] = useState(false)
-  const [tailLines, setTailLines] = useState(1)
+  const [indent, setIndent] = useState(exportSettings.indentParagraph)
+  const [paragraphGap, setParagraphGap] = useState(exportSettings.paragraphGap)
+  const [headEnabled, setHeadEnabled] = useState(exportSettings.chapterHeadBlank > 0)
+  const [headLines, setHeadLines] = useState(Math.max(1, exportSettings.chapterHeadBlank))
+  const [tailEnabled, setTailEnabled] = useState(exportSettings.chapterTailBlank > 0)
+  const [tailLines, setTailLines] = useState(Math.max(1, exportSettings.chapterTailBlank))
+
+  // Persist any setting change to export-settings.json so it survives between exports.
+  useEffect(() => {
+    const next: ExportSettings = {
+      indentParagraph: indent,
+      paragraphGap,
+      chapterHeadBlank: headEnabled ? headLines : 0,
+      chapterTailBlank: tailEnabled ? tailLines : 0,
+    }
+    patchExportSettings(next)
+    api.saveExportSettings(next).catch(() => {})
+  }, [indent, paragraphGap, headEnabled, headLines, tailEnabled, tailLines, patchExportSettings])
 
   async function doExport() {
     if (!selectedId) return

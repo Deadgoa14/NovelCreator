@@ -71,6 +71,9 @@ class StorylineReq(BaseModel):
     name: str = ""
     color: str = "#4caf50"
     nodes: List[str] = Field(default_factory=list)
+    type: str = "single"
+    edges: List[Any] = Field(default_factory=list)
+    start: Optional[str] = None
 
 
 class VolumeReq(BaseModel):
@@ -87,6 +90,13 @@ class ExportReq(BaseModel):
     storylineId: str
     format: str = "txt"
     indentParagraph: bool = False
+    paragraphGap: int = 0
+    chapterHeadBlank: int = 0
+    chapterTailBlank: int = 0
+
+
+class ExportSettingsReq(BaseModel):
+    indentParagraph: bool = True
     paragraphGap: int = 0
     chapterHeadBlank: int = 0
     chapterTailBlank: int = 0
@@ -313,6 +323,17 @@ def export(req: ExportReq):
     )
     name = sl.get("name") or "导出"
     return {"filename": f"{name}.txt", "content": content, "charCount": char_count}
+
+
+# ---------------------------------------------------------------- export settings
+@router.get("/export-settings")
+def get_export_settings():
+    return ps.read_export_settings()
+
+
+@router.put("/export-settings")
+def save_export_settings(req: ExportSettingsReq):
+    return ps.write_export_settings(req.model_dump())
 
 
 # ---------------------------------------------------------------- shutdown

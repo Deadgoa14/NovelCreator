@@ -17,6 +17,7 @@ import '@xyflow/react/dist/style.css'
 import { api } from '../api'
 import { useStore } from '../store'
 import { useSettings } from '../settings'
+import { useDialog } from '../components/Dialog'
 import type { Beat, Storyline } from '../types'
 
 type PlotData = { label: string; color: string; count: number; beats: Beat[]; expanded: boolean }
@@ -45,7 +46,7 @@ function PlotNode({ data, selected }: NodeProps<FlowNode>) {
       </div>
       {data.expanded && data.beats.length > 0 && (
         <div
-          className="absolute top-full left-0 mt-1 w-64 bg-white dark:bg-gray-800 rounded-md shadow-lg border border-gray-200 dark:border-gray-700 p-2 text-left space-y-1 z-[100]"
+          className="absolute top-full left-1/2 -translate-x-1/2 mt-1 w-64 bg-white dark:bg-gray-800 rounded-md shadow-lg border border-gray-200 dark:border-gray-700 p-2 text-left space-y-1 z-[100]"
           style={{ fontSize: beatFontSize }}
         >
           {data.beats.map((b, i) => (
@@ -61,9 +62,9 @@ function PlotNode({ data, selected }: NodeProps<FlowNode>) {
 
 function StartNode({ data }: NodeProps<FlowNode>) {
   return (
-    <div className="relative">
+    <div className="relative cursor-grab active:cursor-grabbing">
       <div
-        className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium text-white shadow-sm whitespace-nowrap"
+        className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-medium text-white shadow-sm whitespace-nowrap"
         style={{ background: data.color, boxShadow: `0 0 0 3px ${data.color}33` }}
       >
         <span className="w-2 h-2 rounded-full bg-white/90 shrink-0" />
@@ -72,7 +73,7 @@ function StartNode({ data }: NodeProps<FlowNode>) {
       <Handle
         type="source"
         position={Position.Right}
-        style={{ width: 10, height: 10, background: '#fff', border: `2px solid ${data.color}`, right: -5 }}
+        style={{ width: 14, height: 14, background: '#fff', border: `2px solid ${data.color}`, right: -7 }}
       />
     </div>
   )
@@ -95,6 +96,7 @@ export function WhiteboardPage() {
   const [clipboard, setClipboard] = useState<string | null>(null)
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set())
   const [flowNodes, setFlowNodes, onNodesChangeRaw] = useNodesState<FlowNode>([])
+  const { alert, confirm, prompt } = useDialog()
 
   const activeLine = storylines.find((s) => s.id === activeLineId) ?? null
 
@@ -126,11 +128,12 @@ export function WhiteboardPage() {
     return '#7c3aed'
   }
 
-  // sync flow nodes from store (preserve live positions, then stored, then auto)
+  // sync flow nodes from store (preserve live positions, then stored, then auto).
+  // Start nodes are part of the same controlled list so their drags update live.
   useEffect(() => {
     setFlowNodes((current) => {
       const existing = new Map(current.map((n) => [n.id, n]))
-      return nodes.map((n, i) => {
+      const plotNodes: FlowNode[] = nodes.map((n, i) => {
         const old = existing.get(n.id)
         return {
           id: n.id,
@@ -145,34 +148,56 @@ export function WhiteboardPage() {
           },
         } as FlowNode
       })
+      const posById = new Map(plotNodes.map((n) => [n.id, n.position]))
+      const startNodes: FlowNode[] = storylines.map((sl, idx) => {
+        const old = existing.get(`start:${sl.id}`)
+        const firstId = sl.nodes.find((id) => posById.has(id))
+        const first = firstId ? posById.get(firstId)! : null
+        const fallback = first ? { x: first.x - 110, y: first.y + 6 + idx * 26 } : { x: 40, y: idx * 90 + 40 }
+        return {
+          id: `start:${sl.id}`,
+          type: 'startNode',
+          position: old?.position ?? startPos.get(sl.id) ?? fallback,
+          draggable: true,
+          data: { label: sl.name, color: sl.color, count: 0, beats: [], expanded: false },
+        } as FlowNode
+      })
+      return [...plotNodes, ...startNodes]
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [nodes, storylines, expandedIds, whiteboard])
-
-  // one start-dot per storyline, draggable + connectable; name shown on the dot
-  const startNodes = useMemo<FlowNode[]>(() => {
-    const posById = new Map(flowNodes.map((n) => [n.id, n.position]))
-    const result: FlowNode[] = []
-    storylines.forEach((sl, idx) => {
-      const firstId = sl.nodes.find((id) => posById.has(id))
-      if (!firstId) return
-      const first = posById.get(firstId)!
-      const pos = startPos.get(sl.id) ?? { x: first.x - 110, y: first.y + 6 + idx * 26 }
-      result.push({
-        id: `start:${sl.id}`,
-        type: 'startNode',
-        position: pos,
-        draggable: true,
-        data: { label: sl.name, color: sl.color, count: 0, beats: [], expanded: false },
-      })
-    })
-    return result
-  }, [flowNodes, storylines, startPos])
 
   const edges = useMemo<Edge[]>(() => {
     const existing = new Set(nodes.map((n) => n.id))
     const result: Edge[] = []
     for (const sl of storylines) {
+      if (sl.type === 'branch') {
+        for (const be of sl.edges ?? []) {
+          if (!existing.has(be.from) || !existing.has(be.to)) continue
+          const active = !!be.active
+          result.push({
+            id: `${sl.id}-${be.from}-${be.to}`,
+            source: be.from,
+            target: be.to,
+            animated: active,
+            markerEnd: { type: MarkerType.ArrowClosed, color: active ? sl.color : '#9ca3af' },
+            data: { lineId: sl.id, source: be.from, target: be.to, branch: true },
+            style: { stroke: active ? sl.color : '#9ca3af', strokeWidth: active ? 2 : 1.5 },
+          })
+        }
+        if (sl.start && existing.has(sl.start)) {
+          result.push({
+            id: `start:${sl.id}:edge`,
+            source: `start:${sl.id}`,
+            target: sl.start,
+            animated: true,
+            markerEnd: { type: MarkerType.ArrowClosed, color: sl.color },
+            data: { lineId: sl.id, start: true },
+            style: { stroke: sl.color, strokeWidth: 2, strokeDasharray: '4 2' },
+          })
+        }
+        continue
+      }
       const ids = sl.nodes.filter((id) => existing.has(id))
       for (let i = 0; i < ids.length - 1; i++) {
         result.push({
@@ -215,7 +240,7 @@ export function WhiteboardPage() {
   }
 
   async function deleteNode(id: string) {
-    if (!window.confirm('删除该剧情节点？')) return
+    if (!(await confirm('删除该剧情节点？'))) return
     await api.deleteNode(id)
     await refreshNodes()
   }
@@ -229,15 +254,15 @@ export function WhiteboardPage() {
 
   async function renameNode(id: string) {
     const n = nodes.find((x) => x.id === id)
-    const name = window.prompt('节点标题', n?.title || '')
+    const name = await prompt('节点标题', n?.title || '')
     if (name === null) return
     await api.updateNode(id, { title: name })
     await refreshNodes()
   }
 
-  function pasteNode() {
+  async function pasteNode() {
     if (!clipboard) {
-      window.alert('请先右键某个节点选择「复制」')
+      await alert('请先右键某个节点选择「复制」')
       return
     }
     duplicateNode(clipboard)
@@ -247,21 +272,38 @@ export function WhiteboardPage() {
     const source = conn.source
     const target = conn.target
     if (!source || !target || !activeLine) return
+    const line = activeLine
+    const isBranch = line.type === 'branch'
+
     if (source.startsWith('start:')) {
-      // start dot -> target makes target the first node of the line
-      const next = activeLine.nodes.filter((id) => id !== target)
-      next.unshift(target)
-      saveLine(activeLine.id, { nodes: next })
+      if (isBranch) {
+        const nodes = line.nodes.includes(target) ? [...line.nodes] : [...line.nodes, target]
+        saveLine(line.id, { start: target, nodes })
+      } else {
+        const next = line.nodes.filter((id) => id !== target)
+        next.unshift(target)
+        saveLine(line.id, { nodes: next })
+      }
       return
     }
-    const next = [...activeLine.nodes]
+
+    if (isBranch) {
+      const nodes = line.nodes.includes(source) ? [...line.nodes] : [...line.nodes, source]
+      if (!nodes.includes(target)) nodes.push(target)
+      const edges = (line.edges ?? []).map((e) => (e.from === source ? { ...e, active: false } : e))
+      edges.push({ from: source, to: target, active: true })
+      saveLine(line.id, { nodes, edges })
+      return
+    }
+
+    const next = [...line.nodes]
     const si = next.indexOf(source)
     const ti = next.indexOf(target)
     if (ti !== -1) next.splice(ti, 1)
     if (si === -1) next.push(source)
     const insertAt = next.indexOf(source) + 1
     next.splice(insertAt, 0, target)
-    saveLine(activeLine.id, { nodes: next })
+    saveLine(line.id, { nodes: next })
   }
 
   async function saveLine(id: string, patch: Partial<Storyline>) {
@@ -273,9 +315,18 @@ export function WhiteboardPage() {
     patchStorylines(data.storylines)
   }
 
+  function onEdgeClick(_: unknown, edge: Edge) {
+    const d = edge.data as { lineId?: string; branch?: boolean } | undefined
+    if (!d?.branch) return
+    const line = storylines.find((s) => s.id === d.lineId)
+    if (!line || line.type !== 'branch') return
+    const edges = (line.edges ?? []).map((e) => (e.from === edge.source ? { ...e, active: e.to === edge.target } : e))
+    saveLine(line.id, { edges })
+  }
+
   async function quickGenerateOverallLine() {
     if (nodes.length === 0) {
-      window.alert('还没有剧情节点，请先创建节点')
+      await alert('还没有剧情节点，请先创建节点')
       return
     }
     const orderedIds = [...nodes].sort((a, b) => a.order - b.order).map((n) => n.id)
@@ -292,51 +343,62 @@ export function WhiteboardPage() {
   }
 
   async function disconnectEdge(edge: Edge) {
-    const d = edge.data as { lineId: string; source?: string; target?: string; start?: boolean } | undefined
+    const d = edge.data as { lineId: string; source?: string; target?: string; start?: boolean; branch?: boolean } | undefined
     if (!d || d.start || !d.source || !d.target) return
     const line = storylines.find((s) => s.id === d.lineId)
     if (!line) return
+
+    if (line.type === 'branch') {
+      const edges = (line.edges ?? []).filter((e) => !(e.from === d.source && e.to === d.target))
+      const members = new Set<string>()
+      if (line.start) members.add(line.start)
+      for (const e of edges) {
+        members.add(e.from)
+        members.add(e.to)
+      }
+      await saveLine(line.id, { edges, nodes: Array.from(members) })
+      return
+    }
+
     const idx = line.nodes.indexOf(d.source)
     if (idx === -1 || line.nodes[idx + 1] !== d.target) return
-    const nodes2 = line.nodes.filter((_, i) => i !== idx + 1)
-    await api.updateStoryline(line.id, { ...line, nodes: nodes2 })
-    const data = await api.getStorylines()
-    patchStorylines(data.storylines)
+    await saveLine(line.id, { nodes: line.nodes.filter((_, i) => i !== idx + 1) })
   }
 
-  function onEdgeDoubleClick(_: unknown, edge: Edge) {
-    if (!window.confirm('断开这两个节点的连接？')) return
-    disconnectEdge(edge)
+  async function onEdgeDoubleClick(_: unknown, edge: Edge) {
+    if (!(await confirm('断开这两个节点的连接？'))) return
+    void disconnectEdge(edge)
   }
 
-  function onEdgesDelete(deleted: Edge[]) {
+  async function onEdgesDelete(deleted: Edge[]) {
     const real = deleted.filter((e) => !(e.data as { start?: boolean })?.start)
     if (!real.length) return
-    if (!window.confirm(`断开 ${real.length} 条连接？`)) return
-    real.forEach((e) => disconnectEdge(e))
+    if (!(await confirm(`断开 ${real.length} 条连接？`))) return
+    real.forEach((e) => void disconnectEdge(e))
   }
 
   async function changeLineColor(lineId?: string) {
     if (!lineId) return
     const line = storylines.find((s) => s.id === lineId)
     if (!line) return
-    const color = window.prompt('连线颜色（hex，例如 #4caf50）', line.color)
+    const color = await prompt('连线颜色（hex，例如 #4caf50）', line.color)
     if (color === null) return
     await saveLine(line.id, { color })
   }
 
-  async function addLine() {
-    const name = window.prompt('故事线名称', `故事线 ${storylines.length + 1}`)
+  async function addLine(type: 'single' | 'branch') {
+    const label = type === 'branch' ? '可分支故事线' : '单一走向故事线'
+    const name = await prompt(`${label}名称`, `故事线 ${storylines.length + 1}`)
     if (!name) return
     const color = '#4caf50'
-    const created = await api.createStoryline({ id: '', name, color, nodes: [] })
+    const created = await api.createStoryline({ id: '', type, name, color, nodes: [] })
     const data = await api.getStorylines()
     patchStorylines(data.storylines)
     setActiveLineId(created.id)
   }
 
   async function deleteLine(id: string) {
-    if (!window.confirm('删除该故事线？（不影响剧情节点）')) return
+    if (!(await confirm('删除该故事线？（不影响剧情节点）'))) return
     await api.deleteStoryline(id)
     const data = await api.getStorylines()
     patchStorylines(data.storylines)
@@ -344,6 +406,7 @@ export function WhiteboardPage() {
   }
 
   function onNodeClick(_: unknown, node: Node) {
+    if (node.type !== 'plotNode') return
     setCurrentNodeId(node.id)
     setExpandedIds((prev) => {
       const next = new Set(prev)
@@ -382,8 +445,11 @@ export function WhiteboardPage() {
             <button onClick={createNode} className="px-2.5 py-1.5 text-xs bg-blue-600 text-white rounded-md hover:bg-blue-700">
               ＋ 剧情节点
             </button>
-            <button onClick={addLine} className="px-2.5 py-1.5 text-xs bg-gray-600 text-white rounded-md hover:bg-gray-700">
-              ＋ 故事线
+            <button onClick={() => addLine('single')} className="px-2.5 py-1.5 text-xs bg-gray-600 text-white rounded-md hover:bg-gray-700">
+              ＋ 单一走向故事线
+            </button>
+            <button onClick={() => addLine('branch')} className="px-2.5 py-1.5 text-xs bg-purple-600 text-white rounded-md hover:bg-purple-700">
+              ＋ 可分支故事线
             </button>
             <button onClick={quickGenerateOverallLine} className="px-2.5 py-1.5 text-xs bg-emerald-600 text-white rounded-md hover:bg-emerald-700">
               ⚡ 快速生成总体故事线
@@ -402,6 +468,9 @@ export function WhiteboardPage() {
             >
               <span className="w-2.5 h-2.5 rounded-full" style={{ background: s.color }} />
               <span className="text-gray-700 dark:text-gray-200">{s.name}</span>
+              <span className="text-[10px] px-1 py-0.5 rounded bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400">
+                {s.type === 'branch' ? '分支' : '单线'}
+              </span>
               <span className="text-gray-400">{s.nodes.length}</span>
               <span
                 onClick={(e) => {
@@ -439,20 +508,23 @@ export function WhiteboardPage() {
         )}
         <div className="mt-1.5 text-[11px] text-gray-400">
           {activeLine
-            ? '点击节点展开/闭合梗概；从节点右侧拖到另一节点按顺序连接；右键空白/节点/连线有菜单'
+            ? activeLine.type === 'branch'
+              ? '点击节点展开/闭合梗概；从节点右侧拖出多条连线形成分支；点击连线切换生效分支；右键空白/节点/连线有菜单'
+              : '点击节点展开/闭合梗概；从节点右侧拖到另一节点按顺序连接；右键空白/节点/连线有菜单'
             : '点击上方故事线以选择，然后连接节点'}
         </div>
       </div>
 
       <div className="flex-1 relative">
         <ReactFlow
-          nodes={[...flowNodes, ...startNodes]}
+          nodes={flowNodes}
           edges={edges}
           nodeTypes={nodeTypes}
           onNodesChange={onNodesChange}
           onConnect={onConnect}
           onNodeClick={onNodeClick}
           onNodeDragStop={onNodeDragStop}
+          onEdgeClick={onEdgeClick}
           onEdgeDoubleClick={onEdgeDoubleClick}
           onEdgesDelete={onEdgesDelete}
           deleteKeyCode={['Backspace', 'Delete']}

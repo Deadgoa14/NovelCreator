@@ -29,11 +29,20 @@ export interface Relation {
   label: string
 }
 
+export interface StorylineEdge {
+  from: string
+  to: string
+  active: boolean
+}
+
 export interface Storyline {
   id: string
   name: string
   color: string
   nodes: string[]
+  type?: 'single' | 'branch'
+  edges?: StorylineEdge[]
+  start?: string | null
 }
 
 export interface Volume {
@@ -72,6 +81,13 @@ export type WhiteboardItem =
 
 export type RelationsBoardItem = { type: 'character'; conceptId: string; position: Point }
 
+export interface ExportSettings {
+  indentParagraph: boolean
+  paragraphGap: number
+  chapterHeadBlank: number
+  chapterTailBlank: number
+}
+
 export interface ProjectData {
   project: {
     schemaVersion: number
@@ -85,4 +101,5 @@ export interface ProjectData {
   whiteboard: { items: WhiteboardItem[] }
   relationsBoard: { items: RelationsBoardItem[] }
   nodes: NodeSummary[]
+  exportSettings: ExportSettings
 }

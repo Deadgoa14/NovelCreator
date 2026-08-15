@@ -1,5 +1,6 @@
 import { api } from '../api'
 import { useStore, type Page } from '../store'
+import { useDialog } from './Dialog'
 
 const TABS: { id: Page; label: string; icon: string }[] = [
   { id: 'nodes', label: '剧情节点', icon: '📄' },
@@ -15,6 +16,7 @@ export function Sidebar() {
   const activePage = useStore((s) => s.activePage)
   const setActivePage = useStore((s) => s.setActivePage)
   const projectName = useStore((s) => s.projectName)
+  const { confirm } = useDialog()
 
   return (
     <aside className="w-40 shrink-0 bg-gray-900 text-gray-100 flex flex-col">
@@ -40,8 +42,8 @@ export function Sidebar() {
       </nav>
       <div className="px-3 py-3 border-t border-gray-700/70">
         <button
-          onClick={() => {
-            if (window.confirm('退出程序并停止本地服务？')) {
+          onClick={async () => {
+            if (await confirm('退出程序并停止本地服务？')) {
               api.shutdown().catch(() => {})
               // Try to close this tab; browsers may block it for non-script-opened
               // tabs, so fall back to a clear message.

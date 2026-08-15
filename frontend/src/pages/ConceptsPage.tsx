@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { api, errorMessage } from '../api'
 import { useStore } from '../store'
+import { useDialog } from '../components/Dialog'
 import type { Concept, ConceptType } from '../types'
 
 const TYPE_LABEL: Record<ConceptType, string> = {
@@ -37,6 +38,7 @@ export function ConceptsPage({ scope }: { scope: 'concepts' | 'characters' }) {
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [draft, setDraft] = useState<Concept | null>(null)
   const [aliasInput, setAliasInput] = useState('')
+  const { alert, confirm } = useDialog()
 
   const visible = useMemo(
     () => concepts.filter((c) => (isChar ? c.type === 'character' : c.type !== 'character')),
@@ -80,19 +82,19 @@ export function ConceptsPage({ scope }: { scope: 'concepts' | 'characters' }) {
         .filter(Boolean),
     }
     if (!concept.name.trim()) {
-      window.alert('请填写名称')
+      await alert('请填写名称')
       return
     }
     try {
       if (selectedId) {
         const old = concepts.find((c) => c.id === selectedId)
         if (old && old.name !== concept.name) {
-          const apply = window.confirm(
+          const apply = await confirm(
             `将「${old.name}」重命名为「${concept.name}」，是否应用到全局正文？\n\n所有剧情节点梗概和正文中的「${old.name}」将被替换为新名称，别名保持不变。`,
           )
           if (apply) {
             const r = await api.renameConcept(selectedId, concept.name, true)
-            window.alert(`已替换 ${r.total} 处`)
+            await alert(`已替换 ${r.total} 处`)
             await refreshAfterRename()
           } else {
             await api.updateConcept(selectedId, concept)
@@ -107,12 +109,12 @@ export function ConceptsPage({ scope }: { scope: 'concepts' | 'characters' }) {
       setDraft(null)
       setSelectedId(null)
     } catch (e) {
-      window.alert(errorMessage(e))
+      await alert(errorMessage(e))
     }
   }
 
   async function remove(id: string) {
-    if (!window.confirm('删除该概念？')) return
+    if (!(await confirm('删除该概念？'))) return
     await api.deleteConcept(id)
     await refresh()
     if (selectedId === id) {

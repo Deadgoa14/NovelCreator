@@ -57,6 +57,45 @@ def _volume_of_node(node_id, volume_map):
     return volume_map.get(node_id)
 
 
+def _branch_order(storyline):
+    """Return the ordered node-id list for a branch storyline.
+
+    Walk from ``start`` (fallback: the node with no incoming edge, then
+    ``nodes[0]``) following the unique active outgoing edge until there is
+    none. Inactive branches are skipped.
+    """
+    nodes = storyline.get("nodes") or []
+    edges = storyline.get("edges") or []
+    incoming = {e.get("to") for e in edges if isinstance(e, dict)}
+    root = storyline.get("start") or next((n for n in nodes if n not in incoming), (nodes[0] if nodes else None))
+    if not root:
+        return []
+    by_from = {}
+    for e in edges:
+        if isinstance(e, dict):
+            by_from.setdefault(e.get("from"), []).append(e)
+    order = []
+    cur = root
+    seen = set()
+    while cur and cur not in seen:
+        seen.add(cur)
+        order.append(cur)
+        nxt = None
+        for e in by_from.get(cur, []):
+            if e.get("active"):
+                nxt = e.get("to")
+                break
+        cur = nxt
+    return order
+
+
+def _resolve_order(storyline):
+    """Ordered node-id list to export, regardless of storyline type."""
+    if storyline.get("type") == "branch":
+        return _branch_order(storyline)
+    return storyline.get("nodes", [])
+
+
 def export_storyline(storyline, opts=None):
     opts = opts or {}
     o = {
@@ -87,7 +126,7 @@ def export_storyline(storyline, opts=None):
     char_count = 0
     chapter_no = 0
     emitted_volumes = set()
-    for nid in storyline.get("nodes", []):
+    for nid in _resolve_order(storyline):
         fp = os.path.join(nodes_dir, f"{nid}.md")
         if not os.path.exists(fp):
             continue
