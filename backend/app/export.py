@@ -96,15 +96,19 @@ def _resolve_order(storyline):
     return storyline.get("nodes", [])
 
 
-def export_storyline(storyline, opts=None):
+def _opts(opts):
     opts = opts or {}
-    o = {
+    return {
         "indentParagraph": bool(opts.get("indentParagraph")),
         "paragraphGap": int(opts.get("paragraphGap") or 0),
         "chapterHeadBlank": int(opts.get("chapterHeadBlank") or 0),
         "chapterTailBlank": int(opts.get("chapterTailBlank") or 0),
         "chapterNumberingPerVolume": bool(opts.get("chapterNumberingPerVolume")),
     }
+
+
+def export_storyline(storyline, opts=None):
+    o = _opts(opts)
     nodes_dir = os.path.join(ps.get_current_path(), ps.NODES_DIR)
 
     # Build the "which volume does each node belong to" map from global order.
@@ -150,4 +154,36 @@ def export_storyline(storyline, opts=None):
             char_count += sum(1 for ch in (beat.get("body") or "") if not ch.isspace())
         chapters.append(_render_chapter(chapter_no, meta.get("title") or "", paragraphs, o))
     content = "\n".join(chapters) + ("\n" if chapters else "")
+    return content, char_count
+
+
+def _chapter_index(node_id):
+    """1-based chapter number of a node within its first containing storyline."""
+    from . import storyline_store
+
+    for sl in storyline_store.list_storylines():
+        order = _resolve_order(sl)
+        if node_id in order:
+            return order.index(node_id) + 1
+    return 1
+
+
+def export_node(node_id, opts=None):
+    """Export a single node's prose as one chapter, auto-numbered by its
+    position in its storyline."""
+    o = _opts(opts)
+    nodes_dir = os.path.join(ps.get_current_path(), ps.NODES_DIR)
+    fp = os.path.join(nodes_dir, f"{node_id}.md")
+    if not os.path.exists(fp):
+        raise ps.ProjectError("剧情节点不存在")
+    with open(fp, encoding="utf-8") as f:
+        meta, body = parse_node(f.read())
+    migrate_legacy_body(meta, body)
+    paragraphs = _chapter_paragraphs(meta, o)
+    if not paragraphs:
+        return "", 0
+    content = _render_chapter(_chapter_index(node_id), meta.get("title") or "", paragraphs, o)
+    char_count = 0
+    for beat in meta.get("beats", []) or []:
+        char_count += sum(1 for ch in (beat.get("body") or "") if not ch.isspace())
     return content, char_count

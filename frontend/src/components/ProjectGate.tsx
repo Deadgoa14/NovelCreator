@@ -16,6 +16,8 @@ const inputCls =
 export function ProjectGate() {
   const setProject = useStore((s) => s.setProject)
   const autoOpenLast = useSettings((s) => s.autoOpenLast)
+  const skipAutoOpen = useStore((s) => s.skipAutoOpen)
+  const consumeSkipAutoOpen = useStore((s) => s.consumeSkipAutoOpen)
   const [loading, setLoading] = useState(true)
   const [recent, setRecent] = useState<RecentProject[]>([])
   const [mode, setMode] = useState<'list' | 'create' | 'open'>('list')
@@ -25,13 +27,17 @@ export function ProjectGate() {
   const [error, setError] = useState('')
 
   // On mount: if enabled, auto-open the last project; otherwise show the list.
+  // When the user explicitly clicks「切换项目」, resetProject() sets skipAutoOpen so
+  // we show the launcher instead of bouncing straight back into the same project.
   useEffect(() => {
+    const shouldAutoOpen = autoOpenLast && !skipAutoOpen
+    consumeSkipAutoOpen()
     let cancelled = false
     ;(async () => {
       try {
         const rec = await api.getRecent()
         if (cancelled) return
-        if (autoOpenLast && rec.lastPath) {
+        if (shouldAutoOpen && rec.lastPath) {
           try {
             const data = await api.openProject(rec.lastPath)
             if (!cancelled) setProject(data, rec.lastPath)

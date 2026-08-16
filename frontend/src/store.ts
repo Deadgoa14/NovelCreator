@@ -12,7 +12,7 @@ import type {
   WhiteboardItem,
 } from './types'
 
-export type Page = 'ai' | 'nodes' | 'whiteboard' | 'concepts' | 'characters' | 'relations' | 'export' | 'settings'
+export type Page = 'raw' | 'ai' | 'nodes' | 'whiteboard' | 'concepts' | 'characters' | 'relations' | 'export' | 'settings'
 
 export interface CurrentNode {
   id: string
@@ -37,9 +37,11 @@ interface AppState {
   currentVolumeId: string | null
   focusBeat: { nodeId: string; beatId: string; nonce: number } | null
   ready: boolean
+  skipAutoOpen: boolean
 
   setProject: (data: ProjectData, path: string) => void
   resetProject: () => void
+  consumeSkipAutoOpen: () => void
   setActivePage: (p: Page) => void
   setCurrentNodeId: (id: string | null) => void
   setCurrentVolumeId: (id: string | null) => void
@@ -72,6 +74,7 @@ export const useStore = create<AppState>((set) => ({
   currentVolumeId: null,
   focusBeat: null,
   ready: false,
+  skipAutoOpen: false,
 
   setProject: (data, path) =>
     set({
@@ -92,6 +95,7 @@ export const useStore = create<AppState>((set) => ({
   resetProject: () =>
     set({
       ready: false,
+      skipAutoOpen: true,
       projectPath: null,
       projectName: '',
       concepts: [],
@@ -106,6 +110,7 @@ export const useStore = create<AppState>((set) => ({
       currentVolumeId: null,
       activePage: 'nodes',
     }),
+  consumeSkipAutoOpen: () => set({ skipAutoOpen: false }),
   setActivePage: (p) => set({ activePage: p }),
   setCurrentNodeId: (id) => set({ currentNodeId: id }),
   setCurrentVolumeId: (id) => set({ currentVolumeId: id }),

@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react'
 import type { Concept } from './types'
 
-interface Entry {
+export interface ConceptEntry {
   text: string
   concept: Concept
 }
@@ -10,8 +10,10 @@ function escapeRegExp(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
-function compile(concepts: Concept[]): { entries: Entry[]; regex: RegExp | null } {
-  const entries: Entry[] = []
+/** Build a longest-first regex alternation for every concept name + alias, plus
+ * the matching entries (to look up which concept a given match belongs to). */
+export function compileConcepts(concepts: Concept[]): { entries: ConceptEntry[]; regex: RegExp | null } {
+  const entries: ConceptEntry[] = []
   for (const c of concepts) {
     const names = [c.name, ...(c.aliases ?? [])].filter((n) => n && n.trim().length > 0)
     for (const n of names) entries.push({ text: n, concept: c })
@@ -23,7 +25,7 @@ function compile(concepts: Concept[]): { entries: Entry[]; regex: RegExp | null 
 
 /** Split `text` into React nodes, wrapping concept name/alias matches in a colored span. */
 export function highlightText(text: string, concepts: Concept[]): ReactNode[] {
-  const { entries, regex } = compile(concepts)
+  const { entries, regex } = compileConcepts(concepts)
   if (!regex || !text) return [text]
   const out: ReactNode[] = []
   let last = 0

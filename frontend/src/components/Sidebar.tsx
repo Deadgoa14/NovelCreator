@@ -3,13 +3,14 @@ import { useStore, type Page } from '../store'
 import { useDialog } from './Dialog'
 
 const TABS: { id: Page; label: string; icon: string }[] = [
-  { id: 'ai', label: 'AI 设置', icon: '🤖' },
-  { id: 'nodes', label: '剧情节点', icon: '📄' },
+  { id: 'raw', label: '生文本分析', icon: '🔬' },
+  { id: 'nodes', label: '章节目录', icon: '📄' },
   { id: 'whiteboard', label: '故事线白板', icon: '🗺️' },
   { id: 'concepts', label: '概念', icon: '🏷️' },
   { id: 'characters', label: '人物', icon: '👤' },
   { id: 'relations', label: '人物关系', icon: '🕸️' },
-  { id: 'export', label: '导出全篇', icon: '📤' },
+  { id: 'export', label: '导出', icon: '📤' },
+  { id: 'ai', label: 'AI 设置', icon: '🤖' },
   { id: 'settings', label: '设置', icon: '⚙️' },
 ]
 

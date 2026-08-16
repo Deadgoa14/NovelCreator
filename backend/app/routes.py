@@ -67,7 +67,8 @@ class PositionReq(BaseModel):
 
 
 class RenameReq(BaseModel):
-    newName: str
+    oldTerm: str
+    newTerm: str
     apply: bool = False
 
 
@@ -92,7 +93,8 @@ class RelationsReq(BaseModel):
 
 
 class ExportReq(BaseModel):
-    storylineId: str
+    storylineId: Optional[str] = None
+    nodeId: Optional[str] = None
     format: str = "txt"
     indentParagraph: bool = False
     paragraphGap: int = 0
@@ -117,6 +119,7 @@ class AiConfigReq(BaseModel):
 class AiTextReq(BaseModel):
     text: str
     type: str = "character"
+    chunkChars: int = 1000
 
 
 class AiContinueReq(BaseModel):
@@ -326,9 +329,13 @@ def rename_concept(concept_id: str, req: RenameReq):
         concept = concept_store.get_concept(concept_id)
     except ps.ProjectError as e:
         raise _http(e)
-    result = rename_mod.rename_concept(concept, req.newName, req.apply)
+    result = rename_mod.rename_term(concept, req.oldTerm, req.newTerm, req.apply)
     if req.apply:
-        concept["name"] = req.newName
+        if concept.get("name") == req.oldTerm:
+            concept["name"] = req.newTerm
+        else:
+            aliases = concept.get("aliases") or []
+            concept["aliases"] = [req.newTerm if a == req.oldTerm else a for a in aliases]
         concept_store.update_concept(concept_id, concept)
     return result
 
@@ -387,19 +394,25 @@ def set_character_position(concept_id: str, req: PositionReq):
 # ---------------------------------------------------------------- export
 @router.post("/export")
 def export(req: ExportReq):
+    opts = {
+        "indentParagraph": req.indentParagraph,
+        "paragraphGap": req.paragraphGap,
+        "chapterHeadBlank": req.chapterHeadBlank,
+        "chapterTailBlank": req.chapterTailBlank,
+        "chapterNumberingPerVolume": req.chapterNumberingPerVolume,
+    }
+    if req.nodeId:
+        content, char_count = export_mod.export_node(req.nodeId, opts)
+        try:
+            n = node_store.get_node(req.nodeId)
+            title = (n.get("meta") or {}).get("title") or "单章"
+        except ps.ProjectError:
+            title = "单章"
+        return {"filename": f"{title}.txt", "content": content, "charCount": char_count}
     sl = next((s for s in storyline_store.list_storylines() if s["id"] == req.storylineId), None)
     if not sl:
         raise _http("故事线不存在")
-    content, char_count = export_mod.export_storyline(
-        sl,
-        {
-            "indentParagraph": req.indentParagraph,
-            "paragraphGap": req.paragraphGap,
-            "chapterHeadBlank": req.chapterHeadBlank,
-            "chapterTailBlank": req.chapterTailBlank,
-            "chapterNumberingPerVolume": req.chapterNumberingPerVolume,
-        },
-    )
+    content, char_count = export_mod.export_storyline(sl, opts)
     name = sl.get("name") or "导出"
     return {"filename": f"{name}.txt", "content": content, "charCount": char_count}
 
@@ -446,7 +459,15 @@ def ai_extract(req: AiTextReq):
 @router.post("/ai/summarize")
 def ai_summarize(req: AiTextReq):
     try:
-        return {"beats": ai.summarize_beats(req.text)}
+        return {"beats": ai.summarize_beats(req.text, req.chunkChars)}
+    except ps.ProjectError as e:
+        raise _http(e)
+
+
+@router.post("/ai/analyze-raw")
+def ai_analyze_raw(req: AiTextReq):
+    try:
+        return ai.analyze_raw(req.text)
     except ps.ProjectError as e:
         raise _http(e)
 

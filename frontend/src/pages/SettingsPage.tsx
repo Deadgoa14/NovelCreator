@@ -102,6 +102,20 @@ export function SettingsPage() {
           </Row>
         </Section>
 
+        <Section title="梗概分析">
+          <Row label="提炼梗概分段字数">
+            <input
+              type="number"
+              min={100}
+              step={100}
+              value={s.summarizeChars}
+              onChange={(e) => s.set({ summarizeChars: Math.max(100, Number(e.target.value) || 1000) })}
+              className="w-24 text-sm border border-gray-300 rounded-md px-2 py-1.5 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-100"
+            />
+            <span className="text-xs text-gray-400">字</span>
+          </Row>
+        </Section>
+
         <Section title="故事线白板">
           <Row label="默认发展顺序">
             <select

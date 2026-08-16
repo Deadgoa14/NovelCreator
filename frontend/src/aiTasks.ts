@@ -96,11 +96,11 @@ export function launchExtract(text: string) {
   })()
 }
 
-export function launchSummarize(text: string, nodeId: string) {
+export function launchSummarize(text: string, nodeId: string, chunkChars: number) {
   const id = spawn('summarize', '提炼梗概', { nodeId })
   ;(async () => {
     try {
-      const r = await api.aiSummarize(text)
+      const r = await api.aiSummarize(text, chunkChars)
       store().patch(id, { items: r.beats, status: 'done' })
     } catch (e) {
       store().patch(id, { status: 'error', error: errorMessage(e) })

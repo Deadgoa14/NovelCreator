@@ -25,8 +25,8 @@ if not exist "frontend\dist\index.html" (
   cd ..
 )
 
-echo [4/4] 正在启动服务，稍后浏览器会自动打开 http://127.0.0.1:8000 ...
-start "" cmd /c "timeout /t 2 >nul & start http://127.0.0.1:8000"
+echo [4/4] 正在启动服务，稍后浏览器会自动打开 http://127.0.0.1:8765 ...
+start "" cmd /c "timeout /t 2 >nul & start http://127.0.0.1:8765"
 cd backend
 .venv\Scripts\python run.py
 

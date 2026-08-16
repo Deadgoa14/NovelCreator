@@ -14,7 +14,7 @@ import {
   type NodeProps,
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
-import { api } from '../api'
+import { api, errorMessage } from '../api'
 import { useStore } from '../store'
 import { useSettings, type WhiteboardDirection } from '../settings'
 import { useDialog } from '../components/Dialog'
@@ -305,8 +305,13 @@ export function WhiteboardPage() {
 
   async function deleteNode(id: string) {
     if (!(await confirm('删除该剧情节点？'))) return
-    await api.deleteNode(id)
-    await refreshNodes()
+    try {
+      await api.deleteNode(id)
+      await refreshNodes()
+    } catch (e) {
+      await alert('删除失败：' + errorMessage(e))
+      await refreshNodes().catch(() => {})
+    }
   }
 
   async function duplicateNode(id: string) {

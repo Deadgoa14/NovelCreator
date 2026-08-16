@@ -150,8 +150,13 @@ def _unwrap_list(data):
     return data
 
 
-def _extract_json(text):
-    """Tolerantly pull a JSON array/object out of a model's free-form reply."""
+def _extract_json(text, unwrap=True):
+    """Tolerantly pull a JSON array/object out of a model's free-form reply.
+
+    ``unwrap`` controls whether a dict that wraps a list under a common key
+    (``items``/``beats``/...) is reduced to that list. Disable it when the top
+    level is expected to be an object (e.g. the multi-section analyze output).
+    """
     if not text or not text.strip():
         raise ps.ProjectError("AI 返回为空")
     s = text.strip()
@@ -165,9 +170,13 @@ def _extract_json(text):
                 s = rest
         s = s.rstrip("`")
     s = s.strip()
+
+    def maybe_unwrap(data):
+        return _unwrap_list(data) if unwrap else data
+
     # Whole text first, then bracket extraction (array, then object).
     try:
-        return _unwrap_list(json.loads(s))
+        return maybe_unwrap(json.loads(s))
     except ValueError:
         pass
     for open_c, close_c in (("[", "]"), ("{", "}")):
@@ -175,24 +184,24 @@ def _extract_json(text):
         end = s.rfind(close_c)
         if start != -1 and end > start:
             try:
-                return _unwrap_list(json.loads(s[start : end + 1]))
+                return maybe_unwrap(json.loads(s[start : end + 1]))
             except ValueError:
                 pass
     raise ps.ProjectError("AI 返回中没有可解析的 JSON，请重试")
 
 
-def _ask_json(messages, *, temperature=0.3, max_tokens=4096):
+def _ask_json(messages, *, temperature=0.3, max_tokens=4096, unwrap=True):
     """chat() then tolerant JSON extraction, with one corrective retry on failure."""
     raw = chat(messages, temperature=temperature, max_tokens=max_tokens)
     try:
-        return _extract_json(raw)
+        return _extract_json(raw, unwrap=unwrap)
     except ps.ProjectError:
         retry = messages + [
             {"role": "assistant", "content": raw},
             {"role": "user", "content": "上面的输出无法解析成 JSON。请重新只输出一个纯 JSON（不要代码块、不要任何解释文字）。"},
         ]
         raw2 = chat(retry, temperature=temperature, max_tokens=max_tokens)
-        return _extract_json(raw2)
+        return _extract_json(raw2, unwrap=unwrap)
 
 
 # ---------------------------------------------------------------- task prompts
@@ -235,17 +244,50 @@ def extract_concepts(type_, text):
     return items
 
 
-def summarize_beats(text):
-    """Split prose into beats: each has a one-line summary (text) + its original body."""
+def _chunk_paragraphs(text, size):
+    """Split prose into chunks by natural paragraphs.
+
+    Each chunk ends at a paragraph boundary once its accumulated character
+    count reaches ``size`` — so no paragraph is ever split mid-way, and the
+    last (possibly shorter) paragraph run forms the final chunk.
+    """
+    paras = [p.strip() for p in text.split("\n") if p.strip()]
+    chunks = []
+    cur = []
+    cur_len = 0
+    for p in paras:
+        cur.append(p)
+        cur_len += len(p)
+        if cur_len >= size:
+            chunks.append("\n".join(cur))
+            cur = []
+            cur_len = 0
+    if cur:
+        chunks.append("\n".join(cur))
+    return chunks
+
+
+def summarize_beats(text, chunk_chars=1000):
+    """Condense prose into beats, one per ~``chunk_chars``-sized paragraph run.
+
+    Instead of letting the model split every paragraph into its own beat (which
+    produced overly-fragmented outlines), we chunk locally at paragraph
+    boundaries and ask the model for a single one-line 梗概 per chunk. ``body``
+    is the chunk's original text; ``text`` is the model's summary.
+    """
+    size = max(1, int(chunk_chars or 0) or 1000)
+    chunks = _chunk_paragraphs(text, size)
+    if not chunks:
+        return []
     messages = [
-        {"role": "system", "content": "你是小说大纲助手，擅长把正文拆分成剧情单元。"},
+        {"role": "system", "content": "你是小说大纲助手，擅长把一段剧情浓缩成一句话梗概。"},
         {
             "role": "user",
             "content": (
-                "请把下面这段小说正文拆分成若干条剧情单元，每条输出一句话梗概和对应的原文段落。"
-                "返回一个 JSON 数组，每个元素为 {\"text\": \"一句话梗概\", \"body\": \"该单元对应的原文\"}。"
-                "body 必须是从原文中完整截取、不要改写的原文段落；梗概要概括该段的关键事件。"
-                "不要输出 JSON 以外的任何内容。\n\n正文：\n" + text
+                "下面有若干段剧情片段，用「=====」分隔。请为每一段分别写一句梗概，"
+                "严格按片段顺序返回一个 JSON 数组，数组长度等于片段数量，每个元素是一个字符串"
+                "（对应片段的一句话梗概，概括该段关键事件）。不要输出 JSON 以外的任何内容。\n\n片段：\n"
+                + "\n=====\n".join(chunks)
             ),
         },
     ]
@@ -253,14 +295,102 @@ def summarize_beats(text):
     if not isinstance(data, list):
         raise ps.ProjectError("AI 返回格式错误，请重试")
     beats = []
-    for it in data:
+    for i, ch in enumerate(chunks):
+        item = data[i] if i < len(data) else None
+        if isinstance(item, dict):
+            t = str(item.get("text") or item.get("summary") or "").strip()
+        else:
+            t = str(item).strip() if item is not None else ""
+        if not t:
+            t = ch.split("\n", 1)[0][:40]
+        beats.append({"text": t, "body": ch})
+    return beats
+
+
+def analyze_raw(text):
+    """Break a messy "raw text" (settings + prose + background + notes mixed
+    together) into structured sections: title, summary, worldbuilding,
+    characters, concepts, and beats."""
+    messages = [
+        {
+            "role": "system",
+            "content": "你是小说设定助手。用户会粘贴一段「生文本」，其中可能杂糅设定、正文、背景、解释。请把它拆解成结构化内容。",
+        },
+        {
+            "role": "user",
+            "content": (
+                "请分析下面的生文本，返回一个 JSON 对象，字段为：\n"
+                "title（暂定标题，可空字符串）\n"
+                "summary（一句话故事梗概，可空字符串）\n"
+                "worldbuilding（世界观/设定，数组，每项 {\"name\": 名称, \"description\": 说明}）\n"
+                "characters（人物，数组，每项 {\"name\", \"aliases\": 字符串数组, \"identity\", \"personality\", \"background\", \"description\"}）\n"
+                "concepts（地点/物品/其他概念，数组，每项 {\"name\", \"aliases\": 字符串数组, \"type\": place|item|generic, \"description\"}）\n"
+                "beats（剧情，数组，每项 {\"text\": 一句话梗概, \"body\": 对应原文段落}，body 尽量从原文截取、不改写）\n"
+                "只输出纯 JSON，不要代码块、不要任何解释文字。\n\n生文本：\n" + text
+            ),
+        },
+    ]
+    data = _ask_json(messages, temperature=0.3, max_tokens=8192, unwrap=False)
+    if not isinstance(data, dict):
+        raise ps.ProjectError("AI 返回格式错误，请重试")
+
+    def _s(v):
+        return str(v).strip() if v is not None else ""
+
+    def _list(v):
+        if isinstance(v, list):
+            return [str(x).strip() for x in v if str(x).strip()]
+        return []
+
+    characters = []
+    for it in data.get("characters") or []:
+        if not isinstance(it, dict) or not _s(it.get("name")):
+            continue
+        characters.append({
+            "name": _s(it.get("name")),
+            "aliases": _list(it.get("aliases")),
+            "identity": _s(it.get("identity")),
+            "personality": _s(it.get("personality")),
+            "background": _s(it.get("background")),
+            "description": _s(it.get("description")),
+        })
+
+    concepts = []
+    for it in data.get("concepts") or []:
+        if not isinstance(it, dict) or not _s(it.get("name")):
+            continue
+        t = _s(it.get("type"))
+        if t not in ("place", "item", "generic"):
+            t = "generic"
+        concepts.append({
+            "name": _s(it.get("name")),
+            "aliases": _list(it.get("aliases")),
+            "type": t,
+            "description": _s(it.get("description")),
+        })
+
+    worldbuilding = []
+    for it in data.get("worldbuilding") or []:
+        if not isinstance(it, dict) or not _s(it.get("name")):
+            continue
+        worldbuilding.append({"name": _s(it.get("name")), "description": _s(it.get("description"))})
+
+    beats = []
+    for it in data.get("beats") or []:
         if not isinstance(it, dict):
             continue
-        t = str(it.get("text") or "").strip()
-        b = str(it.get("body") or "").strip()
-        if t or b:
-            beats.append({"text": t, "body": b})
-    return beats
+        b = {"text": _s(it.get("text")), "body": _s(it.get("body"))}
+        if b["text"] or b["body"]:
+            beats.append(b)
+
+    return {
+        "title": _s(data.get("title")),
+        "summary": _s(data.get("summary")),
+        "worldbuilding": worldbuilding,
+        "characters": characters,
+        "concepts": concepts,
+        "beats": beats,
+    }
 
 
 def continue_messages(title, beats, concepts):

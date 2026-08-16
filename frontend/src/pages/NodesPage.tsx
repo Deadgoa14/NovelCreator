@@ -106,10 +106,15 @@ export function NodesPage() {
 
   async function deleteNode(id: string) {
     if (!(await confirm('删除该剧情节点？正文不可恢复。'))) return
-    await api.deleteNode(id)
-    const list = await api.listNodes()
-    patchNodes(list)
-    if (currentNodeId === id) setCurrentNodeId(list[0]?.id ?? null)
+    try {
+      await api.deleteNode(id)
+      const list = await api.listNodes()
+      patchNodes(list)
+      if (currentNodeId === id) setCurrentNodeId(list[0]?.id ?? null)
+    } catch (e) {
+      await alert('删除失败：' + errorMessage(e))
+      patchNodes(await api.listNodes().catch(() => []))
+    }
   }
 
   async function deleteVolume(id: string) {

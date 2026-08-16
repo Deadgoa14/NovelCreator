@@ -72,6 +72,41 @@ export interface AiSummarizeItem {
   body: string
 }
 
+export interface RawCharacter {
+  name: string
+  aliases: string[]
+  identity: string
+  personality: string
+  background: string
+  description: string
+}
+
+export interface RawConcept {
+  name: string
+  aliases: string[]
+  type: 'place' | 'item' | 'generic'
+  description: string
+}
+
+export interface RawWorldbuilding {
+  name: string
+  description: string
+}
+
+export interface RawBeat {
+  text: string
+  body: string
+}
+
+export interface RawAnalysis {
+  title: string
+  summary: string
+  worldbuilding: RawWorldbuilding[]
+  characters: RawCharacter[]
+  concepts: RawConcept[]
+  beats: RawBeat[]
+}
+
 export interface RecentProject {
   path: string
   name: string
@@ -143,10 +178,10 @@ export const api = {
   updateConcept: (id: string, c: Concept) =>
     request<Concept>(`/api/concepts/${id}`, { method: 'PUT', body: JSON.stringify(c) }),
   deleteConcept: (id: string) => request<{ ok: boolean }>(`/api/concepts/${id}`, { method: 'DELETE' }),
-  renameConcept: (id: string, newName: string, apply: boolean) =>
+  renameConcept: (id: string, oldTerm: string, newTerm: string, apply: boolean) =>
     request<{ affected: { id: string; title: string; count: number }[]; total: number }>(
       `/api/concepts/${id}/rename`,
-      { method: 'POST', body: JSON.stringify({ newName, apply }) },
+      { method: 'POST', body: JSON.stringify({ oldTerm, newTerm, apply }) },
     ),
 
   getStorylines: () => request<{ storylines: Storyline[] }>('/api/storylines'),
@@ -182,6 +217,20 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ storylineId, format: 'txt', ...opts }),
     }),
+  exportNode: (
+    nodeId: string,
+    opts: {
+      indentParagraph: boolean
+      paragraphGap: number
+      chapterHeadBlank: number
+      chapterTailBlank: number
+      chapterNumberingPerVolume: boolean
+    },
+  ) =>
+    request<{ filename: string; content: string; charCount: number }>('/api/export', {
+      method: 'POST',
+      body: JSON.stringify({ nodeId, format: 'txt', ...opts }),
+    }),
 
   saveExportSettings: (s: ExportSettings) =>
     request<ExportSettings>('/api/export-settings', { method: 'PUT', body: JSON.stringify(s) }),
@@ -194,8 +243,13 @@ export const api = {
   aiTest: () => request<{ ok: boolean }>('/api/ai/test', { method: 'POST' }),
   aiExtract: (type: string, text: string) =>
     request<{ items: AiConceptCandidate[] }>('/api/ai/extract', { method: 'POST', body: JSON.stringify({ type, text }) }),
-  aiSummarize: (text: string) =>
-    request<{ beats: AiSummarizeItem[] }>('/api/ai/summarize', { method: 'POST', body: JSON.stringify({ text }) }),
+  aiSummarize: (text: string, chunkChars: number) =>
+    request<{ beats: AiSummarizeItem[] }>('/api/ai/summarize', {
+      method: 'POST',
+      body: JSON.stringify({ text, chunkChars }),
+    }),
+  analyzeRaw: (text: string) =>
+    request<RawAnalysis>('/api/ai/analyze-raw', { method: 'POST', body: JSON.stringify({ text }) }),
   aiContinue: (nodeId: string, beatIndex: number) =>
     request<{ text: string }>('/api/ai/continue', { method: 'POST', body: JSON.stringify({ nodeId, beatIndex }) }),
   aiBeat: (nodeId: string) => request<{ text: string }>('/api/ai/beat', { method: 'POST', body: JSON.stringify({ nodeId }) }),

@@ -88,13 +88,30 @@ export function ConceptsPage({ scope }: { scope: 'concepts' | 'characters' }) {
     try {
       if (selectedId) {
         const old = concepts.find((c) => c.id === selectedId)
-        if (old && old.name !== concept.name) {
+        // Collect 1:1 renames: the primary name and/or a single renamed alias.
+        const renames: { oldTerm: string; newTerm: string }[] = []
+        if (old) {
+          if (old.name !== concept.name) renames.push({ oldTerm: old.name, newTerm: concept.name })
+          const oldAliases = old.aliases ?? []
+          const newAliases = concept.aliases ?? []
+          const removed = oldAliases.filter((a) => !newAliases.includes(a))
+          const added = newAliases.filter((a) => !oldAliases.includes(a))
+          if (removed.length === 1 && added.length === 1) {
+            renames.push({ oldTerm: removed[0], newTerm: added[0] })
+          }
+        }
+        if (renames.length > 0) {
+          const desc = renames.map((r) => `「${r.oldTerm}」→「${r.newTerm}」`).join('、')
           const apply = await confirm(
-            `将「${old.name}」重命名为「${concept.name}」，是否应用到全局正文？\n\n所有剧情节点梗概和正文中的「${old.name}」将被替换为新名称，别名保持不变。`,
+            `将 ${desc} 应用到全局正文？\n\n所有剧情节点梗概和正文中的对应文字将被替换；其他名字与别名保持不变。`,
           )
           if (apply) {
-            const r = await api.renameConcept(selectedId, concept.name, true)
-            await alert(`已替换 ${r.total} 处`)
+            let total = 0
+            for (const r of renames) {
+              const res = await api.renameConcept(selectedId, r.oldTerm, r.newTerm, true)
+              total += res.total
+            }
+            await alert(`已替换 ${total} 处`)
             await refreshAfterRename()
           } else {
             await api.updateConcept(selectedId, concept)

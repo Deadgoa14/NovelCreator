@@ -1,115 +1,36 @@
-import { useEffect, useLayoutEffect, useRef } from 'react'
+import { useEffect, useRef } from 'react'
 import type { ReactNode } from 'react'
+import type { EditorView } from '@codemirror/view'
 import { api } from '../api'
 import { useStore } from '../store'
 import { useSettings } from '../settings'
-import { highlightText } from '../highlight'
 import { uid } from '../util'
 import { launchContinue, launchExtract, launchPolish, launchProofread, launchSummarize } from '../aiTasks'
-import type { Beat, Concept, Volume } from '../types'
+import { CodeBodyEditor } from './CodeBodyEditor'
+import type { Beat, Volume } from '../types'
 
 // Shared non-exported-text styling: italic + reduced opacity.
 const nonExportCls = 'italic opacity-60'
-
-function HighlightTextarea({
-  value,
-  onChange,
-  concepts,
-  fontFamily,
-  fontSize,
-  textColor,
-  placeholder,
-  textareaRef,
-}: {
-  value: string
-  onChange: (v: string) => void
-  concepts: Concept[]
-  fontFamily: string
-  fontSize: number
-  textColor: string
-  placeholder?: string
-  textareaRef?: (el: HTMLTextAreaElement | null) => void
-}) {
-  const shared: React.CSSProperties = {
-    fontFamily,
-    fontSize: `${fontSize}px`,
-    lineHeight: 1.9,
-  }
-  return (
-    <div className="relative w-full">
-      <pre
-        aria-hidden
-        className="whitespace-pre-wrap break-words m-0"
-        style={{ ...shared, color: textColor, minHeight: '1.5em' }}
-      >
-        {value ? highlightText(value, concepts) : <span className="text-gray-400 dark:text-gray-500">{placeholder}</span>}
-      </pre>
-      <textarea
-        ref={textareaRef}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        className="absolute inset-0 w-full h-full resize-none overflow-hidden bg-transparent border-0 outline-none p-0 m-0"
-        style={{ ...shared, color: 'transparent', caretColor: '#3b82f6' }}
-      />
-    </div>
-  )
-}
-
-// Single-line-ish textarea that grows vertically to fit its content (for 梗概 text).
-function AutoGrowTextarea({
-  value,
-  onChange,
-  placeholder,
-  className,
-  textareaRef,
-}: {
-  value: string
-  onChange: (v: string) => void
-  placeholder?: string
-  className?: string
-  textareaRef?: (el: HTMLTextAreaElement | null) => void
-}) {
-  const ref = useRef<HTMLTextAreaElement | null>(null)
-  useLayoutEffect(() => {
-    const el = ref.current
-    if (!el) return
-    el.style.height = 'auto'
-    el.style.height = `${el.scrollHeight}px`
-  }, [value])
-  return (
-    <textarea
-      ref={(el) => {
-        ref.current = el
-        textareaRef?.(el)
-      }}
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-      placeholder={placeholder}
-      rows={1}
-      className={className}
-    />
-  )
-}
 
 export function EditorPane() {
   const currentNode = useStore((s) => s.currentNode)
   const currentNodeId = useStore((s) => s.currentNodeId)
   const currentVolumeId = useStore((s) => s.currentVolumeId)
   const volumes = useStore((s) => s.volumes)
-  const concepts = useStore((s) => s.concepts)
   const patchCurrentNode = useStore((s) => s.patchCurrentNode)
   const patchNodes = useStore((s) => s.patchNodes)
   const patchVolumes = useStore((s) => s.patchVolumes)
+  const concepts = useStore((s) => s.concepts)
   const focusBeat = useStore((s) => s.focusBeat)
-  const { previewFontFamily, previewFontSize, previewTextBg, previewMarginBg, theme } = useSettings()
+  const { previewFontFamily, previewFontSize, previewTextBg, previewMarginBg, theme, summarizeChars } = useSettings()
   const textColor = theme === 'dark' ? '#e5e7eb' : '#1f2937'
+  const summaryColor = theme === 'dark' ? '#d1d5db' : '#4b5563'
 
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const pendingRef = useRef<{ title?: string; beats?: Beat[] }>({})
   const volTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const volPendingRef = useRef<Partial<Volume>>({})
-  const beatBodyRefs = useRef<Record<string, HTMLTextAreaElement | null>>({})
-  const beatTextRefs = useRef<Record<string, HTMLTextAreaElement | null>>({})
+  const beatTextRefs = useRef<Record<string, EditorView | null>>({})
   const beatSectionRefs = useRef<Record<string, HTMLElement | null>>({})
   const lastFocusNonce = useRef<number | null>(null)
 
@@ -124,13 +45,13 @@ export function EditorPane() {
     if (lastFocusNonce.current === fb.nonce) return
     if (!currentNode || currentNode.id !== fb.nodeId) return
     const section = beatSectionRefs.current[fb.beatId]
-    const el = beatTextRefs.current[fb.beatId]
-    if (!section || !el) return
+    const view = beatTextRefs.current[fb.beatId]
+    if (!section || !view) return
     lastFocusNonce.current = fb.nonce
     section.scrollIntoView({ behavior: 'smooth', block: 'start' })
-    el.focus({ preventScroll: true })
-    const len = el.value.length
-    el.setSelectionRange(len, len)
+    view.focus()
+    const len = view.state.doc.length
+    view.dispatch({ selection: { anchor: len } })
   }, [focusBeat, currentNode])
 
   function scheduleSave(patch: { title?: string; beats?: Beat[] }) {
@@ -249,7 +170,7 @@ export function EditorPane() {
         </section>
         <section>
           <div className="text-[11px] uppercase tracking-wide mb-1 text-gray-500 dark:text-gray-400">卷 · 正文（导出）</div>
-          <HighlightTextarea
+          <CodeBodyEditor
             value={selectedVolume.body ?? ''}
             onChange={(v) => scheduleVolumeSave({ body: v })}
             concepts={concepts}
@@ -281,7 +202,7 @@ export function EditorPane() {
           👤 识别角色
         </button>
         <button
-          onClick={() => launchSummarize(nodeBodyText(), currentNodeId ?? '')}
+          onClick={() => launchSummarize(nodeBodyText(), currentNodeId ?? '', summarizeChars)}
           className="px-2.5 py-1 text-xs rounded-md border border-gray-300 text-gray-600 hover:text-blue-600 hover:border-blue-400 dark:border-gray-600 dark:text-gray-300"
         >
           📝 提炼梗概
@@ -293,20 +214,24 @@ export function EditorPane() {
       {beats.map((b, i) => (
         <section key={b.id} className="mb-7" ref={(el) => { beatSectionRefs.current[b.id] = el }}>
           <div className="mb-1.5 flex items-start gap-2">
-            <AutoGrowTextarea
+            <CodeBodyEditor
               value={b.text}
               onChange={(v) => onBeatChange(i, { text: v })}
+              concepts={concepts}
+              fontFamily={previewFontFamily}
+              fontSize="0.95em"
+              textColor={summaryColor}
               placeholder={`梗概 ${i + 1}（不导出）`}
-              textareaRef={(el) => {
-                beatTextRefs.current[b.id] = el
+              className="flex-1 italic opacity-70 font-semibold border-b border-gray-200 dark:border-gray-700 pb-1"
+              onReady={(view) => {
+                beatTextRefs.current[b.id] = view
               }}
-              className="flex-1 resize-none overflow-hidden text-[0.95em] font-semibold bg-transparent border-b border-gray-200 dark:border-gray-700 focus:border-blue-400 focus:outline-none pb-1 italic opacity-70 text-gray-600 dark:text-gray-300"
             />
             <button onClick={() => removeBeat(i)} className="text-gray-300 hover:text-red-500 text-sm shrink-0" title="删除条目">
               ✕
             </button>
           </div>
-          <HighlightTextarea
+          <CodeBodyEditor
             value={b.body ?? ''}
             onChange={(v) => onBeatChange(i, { body: v })}
             concepts={concepts}
@@ -314,9 +239,6 @@ export function EditorPane() {
             fontSize={previewFontSize}
             textColor={textColor}
             placeholder="在这里写正文，换行即分段…"
-            textareaRef={(el) => {
-              beatBodyRefs.current[b.id] = el
-            }}
           />
           <div className="mt-1 flex items-center justify-end gap-3">
             <button

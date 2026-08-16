@@ -45,7 +45,11 @@ export function ExportPage() {
   const exportSettings = useStore((s) => s.exportSettings)
   const patchExportSettings = useStore((s) => s.patchExportSettings)
   const chapterNumberingPerVolume = useSettings((s) => s.chapterNumberingPerVolume)
+  const nodes = useStore((s) => s.nodes)
+  const currentNodeId = useStore((s) => s.currentNodeId)
   const [selectedId, setSelectedId] = useState<string>(storylines[0]?.id ?? '')
+  const [scope, setScope] = useState<'full' | 'chapter'>('full')
+  const [chapterId, setChapterId] = useState<string>(currentNodeId ?? nodes[0]?.id ?? '')
   const [content, setContent] = useState('')
   const [filename, setFilename] = useState('')
   const [charCount, setCharCount] = useState<number | null>(null)
@@ -56,6 +60,11 @@ export function ExportPage() {
   const [headLines, setHeadLines] = useState(Math.max(1, exportSettings.chapterHeadBlank))
   const [tailEnabled, setTailEnabled] = useState(exportSettings.chapterTailBlank > 0)
   const [tailLines, setTailLines] = useState(Math.max(1, exportSettings.chapterTailBlank))
+
+  // When the user selects a chapter elsewhere, follow it here.
+  useEffect(() => {
+    if (currentNodeId) setChapterId(currentNodeId)
+  }, [currentNodeId])
 
   // Persist any setting change to export-settings.json so it survives between exports.
   useEffect(() => {
@@ -70,16 +79,17 @@ export function ExportPage() {
   }, [indent, paragraphGap, headEnabled, headLines, tailEnabled, tailLines, patchExportSettings])
 
   async function doExport() {
-    if (!selectedId) return
+    if (scope === 'chapter' ? !chapterId : !selectedId) return
     setError('')
     try {
-      const r = await api.export(selectedId, {
+      const opts = {
         indentParagraph: indent,
         paragraphGap,
         chapterHeadBlank: headEnabled ? headLines : 0,
         chapterTailBlank: tailEnabled ? tailLines : 0,
         chapterNumberingPerVolume,
-      })
+      }
+      const r = scope === 'chapter' ? await api.exportNode(chapterId, opts) : await api.export(selectedId, opts)
       setContent(r.content)
       setFilename(r.filename)
       setCharCount(r.charCount)
@@ -99,23 +109,60 @@ export function ExportPage() {
   return (
     <div className="h-full flex flex-col bg-gray-50 dark:bg-gray-900">
       <div className="p-3 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
-        <h2 className="text-sm font-semibold text-gray-700 dark:text-gray-200 mb-3">导出全篇</h2>
-        <div className="flex gap-2">
-          <select
-            value={selectedId}
-            onChange={(e) => setSelectedId(e.target.value)}
-            className="flex-1 text-sm border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-100"
+        <h2 className="text-sm font-semibold text-gray-700 dark:text-gray-200 mb-3">导出</h2>
+        <div className="flex gap-1 mb-3">
+          <button
+            onClick={() => setScope('full')}
+            className={`px-3 py-1.5 text-xs rounded-md ${
+              scope === 'full'
+                ? 'bg-blue-600 text-white'
+                : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-300'
+            }`}
           >
-            {storylines.length === 0 && <option value="">暂无故事线</option>}
-            {storylines.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.name}（{s.nodes.length} 个节点）
-              </option>
-            ))}
-          </select>
+            全篇
+          </button>
+          <button
+            onClick={() => setScope('chapter')}
+            className={`px-3 py-1.5 text-xs rounded-md ${
+              scope === 'chapter'
+                ? 'bg-blue-600 text-white'
+                : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-300'
+            }`}
+          >
+            单章
+          </button>
+        </div>
+        <div className="flex gap-2">
+          {scope === 'full' ? (
+            <select
+              value={selectedId}
+              onChange={(e) => setSelectedId(e.target.value)}
+              className="flex-1 text-sm border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-100"
+            >
+              {storylines.length === 0 && <option value="">暂无故事线</option>}
+              {storylines.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.name}（{s.nodes.length} 个节点）
+                </option>
+              ))}
+            </select>
+          ) : (
+            <select
+              value={chapterId}
+              onChange={(e) => setChapterId(e.target.value)}
+              className="flex-1 text-sm border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-100"
+            >
+              {nodes.length === 0 && <option value="">暂无节点</option>}
+              {nodes.map((n) => (
+                <option key={n.id} value={n.id}>
+                  {n.title || '未命名节点'}
+                </option>
+              ))}
+            </select>
+          )}
           <button
             onClick={doExport}
-            disabled={!selectedId}
+            disabled={scope === 'chapter' ? !chapterId : !selectedId}
             className="px-4 py-2 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50"
           >
             导出为 txt
@@ -176,7 +223,7 @@ export function ExportPage() {
             </pre>
           </>
         ) : (
-          <div className="text-center text-gray-400 text-sm py-10">选择一条故事线并点击导出</div>
+          <div className="text-center text-gray-400 text-sm py-10">选择导出范围并点击导出</div>
         )}
       </div>
     </div>

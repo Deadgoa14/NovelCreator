@@ -8,6 +8,7 @@ export interface Settings {
   autoOpenLast: boolean
   whiteboardBeatFontSize: number
   chapterNumberingPerVolume: boolean
+  summarizeChars: number
   whiteboardDirection: WhiteboardDirection
   previewTextBg: string
   previewMarginBg: string
@@ -37,6 +38,7 @@ export const useSettings = create<Settings>()(
       autoOpenLast: true,
       whiteboardBeatFontSize: 11,
       chapterNumberingPerVolume: false,
+      summarizeChars: 1000,
       whiteboardDirection: 'lr',
       previewTextBg: '#ffffff',
       previewMarginBg: '#f9fafb',

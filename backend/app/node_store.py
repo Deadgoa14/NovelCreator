@@ -171,8 +171,12 @@ def save_body(node_id, body):
 
 def delete_node(node_id):
     fp = _node_path(node_id)
-    if os.path.exists(fp):
-        os.remove(fp)
+    # Hold the same lock as update_node/save_body so a concurrent debounced
+    # auto-save can't read the file before removal and write it back after,
+    # which would resurrect the node the user just deleted.
+    with _lock:
+        if os.path.exists(fp):
+            os.remove(fp)
     # Drop the deleted node from every storyline so no stale references remain.
     from . import storyline_store
 
