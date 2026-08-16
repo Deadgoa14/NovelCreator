@@ -1,4 +1,7 @@
 backend/.venv/
+backend/ai_config.json
+backend/recent_projects.json
+backend/ai_usage.json
 frontend/node_modules/
 frontend/dist/
 __pycache__/

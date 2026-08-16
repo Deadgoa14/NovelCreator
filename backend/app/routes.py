@@ -1,17 +1,22 @@
 """FastAPI routes for the novel studio backend."""
+import subprocess
 from typing import Any, List, Optional
 
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from . import (
+    ai,
     board_store,
     concept_store,
     export as export_mod,
     node_store,
     project_store as ps,
+    recent_store,
     rename as rename_mod,
     storyline_store,
+    usage_store,
     volume_store,
 )
 from . import shutdown as sd
@@ -103,8 +108,65 @@ class ExportSettingsReq(BaseModel):
     chapterTailBlank: int = 0
 
 
+class AiConfigReq(BaseModel):
+    baseURL: str = ""
+    apiKey: str = ""
+    model: str = ""
+
+
+class AiTextReq(BaseModel):
+    text: str
+    type: str = "character"
+
+
+class AiContinueReq(BaseModel):
+    nodeId: str
+    beatIndex: int = 0
+
+
+class AiBeatReq(BaseModel):
+    nodeId: str
+
+
+class RecentRemoveReq(BaseModel):
+    path: str
+
+
 def _http(err):
     return HTTPException(status_code=400, detail=str(err))
+
+
+def _pick_directory():
+    """Open a native Windows folder picker; return the chosen path ('' if cancelled)."""
+    # Prefer tkinter (ships with python.org on Windows); fall back to PowerShell.
+    try:
+        import tkinter as tk
+        from tkinter import filedialog
+
+        root = tk.Tk()
+        root.withdraw()
+        root.attributes("-topmost", True)
+        path = filedialog.askdirectory(title="选择文件夹")
+        root.destroy()
+        return path or ""
+    except Exception:
+        pass
+    try:
+        script = (
+            "Add-Type -AssemblyName System.Windows.Forms;"
+            "$f = New-Object System.Windows.Forms.FolderBrowserDialog;"
+            "$null = $f.ShowDialog();"
+            "Write-Output $f.SelectedPath"
+        )
+        out = subprocess.run(
+            ["powershell", "-NoProfile", "-Command", script],
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        return (out.stdout or "").strip()
+    except Exception as e:
+        raise ps.ProjectError(f"无法打开文件夹选择窗口：{e}")
 
 
 # ---------------------------------------------------------------- projects
@@ -130,6 +192,21 @@ def get_project():
         return ps.load_project()
     except ps.ProjectError as e:
         raise _http(e)
+
+
+@router.get("/projects/recent")
+def get_recent():
+    return recent_store.list_recent()
+
+
+@router.post("/projects/recent/remove")
+def remove_recent(req: RecentRemoveReq):
+    return recent_store.remove(req.path)
+
+
+@router.post("/picker/dir")
+def pick_directory():
+    return {"path": _pick_directory()}
 
 
 # ---------------------------------------------------------------- nodes
@@ -336,6 +413,128 @@ def get_export_settings():
 @router.put("/export-settings")
 def save_export_settings(req: ExportSettingsReq):
     return ps.write_export_settings(req.model_dump())
+
+
+# ---------------------------------------------------------------- ai
+@router.get("/ai/config")
+def get_ai_config():
+    return ai.get_config()
+
+
+@router.put("/ai/config")
+def save_ai_config(req: AiConfigReq):
+    return ai.set_config(req.model_dump())
+
+
+@router.post("/ai/test")
+def ai_test():
+    try:
+        ai.chat([{"role": "user", "content": "只回复两个字：OK"}], max_tokens=16)
+        return {"ok": True}
+    except ps.ProjectError as e:
+        raise _http(e)
+
+
+@router.post("/ai/extract")
+def ai_extract(req: AiTextReq):
+    try:
+        return {"items": ai.extract_concepts(req.type, req.text)}
+    except ps.ProjectError as e:
+        raise _http(e)
+
+
+@router.post("/ai/summarize")
+def ai_summarize(req: AiTextReq):
+    try:
+        return {"beats": ai.summarize_beats(req.text)}
+    except ps.ProjectError as e:
+        raise _http(e)
+
+
+@router.post("/ai/continue")
+def ai_continue(req: AiContinueReq):
+    try:
+        n = node_store.get_node(req.nodeId)
+        meta = n.get("meta") or {}
+        beats = meta.get("beats") or []
+        beats_up_to = beats[: req.beatIndex + 1]
+        concepts = concept_store.list_concepts()
+        related = [c for c in concepts if c.get("type") == "character"]
+        return {"text": ai.continue_body(meta.get("title", ""), beats_up_to, related)}
+    except ps.ProjectError as e:
+        raise _http(e)
+
+
+@router.post("/ai/beat")
+def ai_beat(req: AiBeatReq):
+    try:
+        n = node_store.get_node(req.nodeId)
+        meta = n.get("meta") or {}
+        beats = meta.get("beats") or []
+        summaries = [b.get("text") or "" for b in beats if isinstance(b, dict)]
+        return {"text": ai.next_beat(meta.get("title", ""), summaries)}
+    except ps.ProjectError as e:
+        raise _http(e)
+
+
+@router.post("/ai/polish")
+def ai_polish(req: AiTextReq):
+    try:
+        return {"text": ai.polish(req.text)}
+    except ps.ProjectError as e:
+        raise _http(e)
+
+
+@router.post("/ai/proofread")
+def ai_proofread(req: AiTextReq):
+    try:
+        return {"text": ai.proofread(req.text)}
+    except ps.ProjectError as e:
+        raise _http(e)
+
+
+@router.post("/ai/stream/continue")
+async def ai_stream_continue(req: AiContinueReq):
+    try:
+        n = node_store.get_node(req.nodeId)
+        meta = n.get("meta") or {}
+        beats = meta.get("beats") or []
+        beats_up_to = beats[: req.beatIndex + 1]
+        concepts = [c for c in concept_store.list_concepts() if c.get("type") == "character"]
+        messages = ai.continue_messages(meta.get("title", ""), beats_up_to, concepts)
+        gen = await ai.stream_response(messages, temperature=0.8, max_tokens=4096)
+    except ps.ProjectError as e:
+        raise _http(e)
+    return StreamingResponse(gen, media_type="text/plain; charset=utf-8")
+
+
+@router.post("/ai/stream/polish")
+async def ai_stream_polish(req: AiTextReq):
+    try:
+        gen = await ai.stream_response(ai.polish_messages(req.text), temperature=0.6, max_tokens=4096)
+    except ps.ProjectError as e:
+        raise _http(e)
+    return StreamingResponse(gen, media_type="text/plain; charset=utf-8")
+
+
+@router.post("/ai/stream/proofread")
+async def ai_stream_proofread(req: AiTextReq):
+    try:
+        gen = await ai.stream_response(ai.proofread_messages(req.text), temperature=0.3, max_tokens=4096)
+    except ps.ProjectError as e:
+        raise _http(e)
+    return StreamingResponse(gen, media_type="text/plain; charset=utf-8")
+
+
+@router.get("/ai/usage")
+def get_ai_usage():
+    return usage_store.snapshot()
+
+
+@router.post("/ai/usage/reset")
+def reset_ai_usage():
+    usage_store.reset()
+    return usage_store.snapshot()
 
 
 # ---------------------------------------------------------------- shutdown

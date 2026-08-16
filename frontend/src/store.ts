@@ -12,7 +12,7 @@ import type {
   WhiteboardItem,
 } from './types'
 
-export type Page = 'nodes' | 'whiteboard' | 'concepts' | 'characters' | 'relations' | 'export' | 'settings'
+export type Page = 'ai' | 'nodes' | 'whiteboard' | 'concepts' | 'characters' | 'relations' | 'export' | 'settings'
 
 export interface CurrentNode {
   id: string
@@ -39,6 +39,7 @@ interface AppState {
   ready: boolean
 
   setProject: (data: ProjectData, path: string) => void
+  resetProject: () => void
   setActivePage: (p: Page) => void
   setCurrentNodeId: (id: string | null) => void
   setCurrentVolumeId: (id: string | null) => void
@@ -86,6 +87,23 @@ export const useStore = create<AppState>((set) => ({
       exportSettings: data.exportSettings,
       currentNodeId: data.nodes[0]?.id ?? null,
       ready: true,
+      activePage: 'nodes',
+    }),
+  resetProject: () =>
+    set({
+      ready: false,
+      projectPath: null,
+      projectName: '',
+      concepts: [],
+      relations: [],
+      storylines: [],
+      volumes: [],
+      whiteboard: [],
+      relationsBoard: [],
+      nodes: [],
+      currentNodeId: null,
+      currentNode: null,
+      currentVolumeId: null,
       activePage: 'nodes',
     }),
   setActivePage: (p) => set({ activePage: p }),

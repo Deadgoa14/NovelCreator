@@ -5,6 +5,7 @@ import { useStore } from '../store'
 import { useSettings } from '../settings'
 import { highlightText } from '../highlight'
 import { uid } from '../util'
+import { launchContinue, launchExtract, launchPolish, launchProofread, launchSummarize } from '../aiTasks'
 import type { Beat, Concept, Volume } from '../types'
 
 // Shared non-exported-text styling: italic + reduced opacity.
@@ -183,6 +184,11 @@ export function EditorPane() {
     scheduleSave({ beats: next })
   }
 
+  // ----- AI helpers -----
+  function nodeBodyText() {
+    return (currentNode?.beats ?? []).map((b) => (b.text || '') + '\n' + (b.body || '')).join('\n')
+  }
+
   if (!selectedVolume && !currentNode) {
     return (
       <div className="h-full flex items-center justify-center text-gray-400 text-sm">
@@ -267,6 +273,20 @@ export function EditorPane() {
         placeholder="节点标题"
         className="w-full text-xl font-bold bg-transparent border-b border-gray-300 dark:border-gray-600 pb-2 mb-6 focus:outline-none focus:border-blue-500 text-gray-800 dark:text-gray-100"
       />
+      <div className="mb-4 flex items-center gap-2">
+        <button
+          onClick={() => launchExtract(nodeBodyText())}
+          className="px-2.5 py-1 text-xs rounded-md border border-gray-300 text-gray-600 hover:text-blue-600 hover:border-blue-400 dark:border-gray-600 dark:text-gray-300"
+        >
+          👤 识别角色
+        </button>
+        <button
+          onClick={() => launchSummarize(nodeBodyText(), currentNodeId ?? '')}
+          className="px-2.5 py-1 text-xs rounded-md border border-gray-300 text-gray-600 hover:text-blue-600 hover:border-blue-400 dark:border-gray-600 dark:text-gray-300"
+        >
+          📝 提炼梗概
+        </button>
+      </div>
       {beats.length === 0 && (
         <div className="text-gray-400 text-sm text-center py-10">暂无梗概条目，点击下方「＋ 添加条目」</div>
       )}
@@ -298,6 +318,26 @@ export function EditorPane() {
               beatBodyRefs.current[b.id] = el
             }}
           />
+          <div className="mt-1 flex items-center justify-end gap-3">
+            <button
+              onClick={() => launchContinue(currentNodeId ?? '', i)}
+              className="text-xs text-gray-400 hover:text-blue-600"
+            >
+              ✨ 续写
+            </button>
+            <button
+              onClick={() => launchPolish(currentNodeId ?? '', i, b.body ?? '')}
+              className="text-xs text-gray-400 hover:text-blue-600"
+            >
+              💡 润色
+            </button>
+            <button
+              onClick={() => launchProofread(currentNodeId ?? '', i, b.body ?? '')}
+              className="text-xs text-gray-400 hover:text-blue-600"
+            >
+              🔍 审校
+            </button>
+          </div>
         </section>
       ))}
       <button

@@ -1,3 +1,4 @@
+import { useStore } from '../store'
 import { FONT_FAMILIES, FONT_SIZES, useSettings, type WhiteboardDirection } from '../settings'
 
 const inputCls =
@@ -25,6 +26,7 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 
 export function SettingsPage() {
   const s = useSettings()
+  const resetProject = useStore((state) => state.resetProject)
 
   return (
     <div className="h-full flex flex-col bg-gray-50 dark:bg-gray-900">
@@ -34,6 +36,25 @@ export function SettingsPage() {
       </div>
 
       <div className="flex-1 overflow-y-auto p-4">
+        <Section title="项目">
+          <Row label="每次启动时自动打开上次项目">
+            <input
+              type="checkbox"
+              checked={s.autoOpenLast}
+              onChange={(e) => s.set({ autoOpenLast: e.target.checked })}
+              className="h-4 w-4 rounded border-gray-300"
+            />
+          </Row>
+          <Row label="切换项目">
+            <button
+              onClick={() => resetProject()}
+              className="px-4 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-md text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+            >
+              切换项目
+            </button>
+          </Row>
+        </Section>
+
         <Section title="外观">
           <Row label="外观模式">
             <div className="flex rounded-md overflow-hidden border border-gray-300 dark:border-gray-600">

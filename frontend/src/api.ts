@@ -22,7 +22,86 @@ export function errorMessage(e: unknown): string {
   return e instanceof Error ? e.message : String(e)
 }
 
+// Stream a plain-text response from the backend, invoking onChunk for each
+// decoded fragment. Errors (non-2xx) throw before any chunk is emitted.
+async function streamRequest(path: string, body: unknown, onChunk: (text: string) => void): Promise<void> {
+  const res = await fetch(path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) {
+    let detail = res.statusText
+    try {
+      const j = await res.json()
+      if (j?.detail) detail = typeof j.detail === 'string' ? j.detail : JSON.stringify(j.detail)
+    } catch {
+      /* ignore */
+    }
+    throw new Error(detail)
+  }
+  if (!res.body) throw new Error('无响应流')
+  const reader = res.body.getReader()
+  const decoder = new TextDecoder()
+  for (;;) {
+    const { done, value } = await reader.read()
+    if (done) break
+    onChunk(decoder.decode(value, { stream: true }))
+  }
+}
+
 export type ReorderItem = { type: 'node' | 'volume'; id: string }
+
+export interface AiConfig {
+  baseURL: string
+  apiKey: string
+  model: string
+}
+
+export interface AiConceptCandidate {
+  name: string
+  aliases: string[]
+  description: string
+  identity: string
+  personality: string
+  background: string
+}
+
+export interface AiSummarizeItem {
+  text: string
+  body: string
+}
+
+export interface RecentProject {
+  path: string
+  name: string
+  lastOpened: string
+}
+
+export interface AiUsageByModel {
+  model: string
+  requests: number
+  input: number
+  output: number
+  cost: number
+}
+
+export interface AiUsageDaily {
+  date: string
+  requests: number
+  input: number
+  output: number
+  cost: number
+}
+
+export interface AiUsage {
+  totalRequests: number
+  totalInput: number
+  totalOutput: number
+  totalCost: number
+  byModel: AiUsageByModel[]
+  daily: AiUsageDaily[]
+}
 
 export const api = {
   createProject: (path: string, name: string) =>
@@ -30,6 +109,13 @@ export const api = {
   openProject: (path: string) =>
     request<ProjectData>('/api/projects/open', { method: 'POST', body: JSON.stringify({ path }) }),
   getProject: () => request<ProjectData>('/api/project'),
+  getRecent: () => request<{ recent: RecentProject[]; lastPath: string }>('/api/projects/recent'),
+  removeRecent: (path: string) =>
+    request<{ recent: RecentProject[]; lastPath: string }>('/api/projects/recent/remove', {
+      method: 'POST',
+      body: JSON.stringify({ path }),
+    }),
+  pickDirectory: () => request<{ path: string }>('/api/picker/dir', { method: 'POST' }),
 
   listNodes: () => request<NodeSummary[]>('/api/nodes'),
   createNode: () => request<NodeDetail>('/api/nodes', { method: 'POST' }),
@@ -102,4 +188,26 @@ export const api = {
 
   shutdown: () => request<{ ok: boolean }>('/api/shutdown', { method: 'POST' }),
   heartbeat: () => request<{ ok: boolean }>('/api/heartbeat', { method: 'POST' }),
+
+  getAiConfig: () => request<AiConfig>('/api/ai/config'),
+  saveAiConfig: (c: AiConfig) => request<AiConfig>('/api/ai/config', { method: 'PUT', body: JSON.stringify(c) }),
+  aiTest: () => request<{ ok: boolean }>('/api/ai/test', { method: 'POST' }),
+  aiExtract: (type: string, text: string) =>
+    request<{ items: AiConceptCandidate[] }>('/api/ai/extract', { method: 'POST', body: JSON.stringify({ type, text }) }),
+  aiSummarize: (text: string) =>
+    request<{ beats: AiSummarizeItem[] }>('/api/ai/summarize', { method: 'POST', body: JSON.stringify({ text }) }),
+  aiContinue: (nodeId: string, beatIndex: number) =>
+    request<{ text: string }>('/api/ai/continue', { method: 'POST', body: JSON.stringify({ nodeId, beatIndex }) }),
+  aiBeat: (nodeId: string) => request<{ text: string }>('/api/ai/beat', { method: 'POST', body: JSON.stringify({ nodeId }) }),
+  aiPolish: (text: string) => request<{ text: string }>('/api/ai/polish', { method: 'POST', body: JSON.stringify({ text }) }),
+  aiProofread: (text: string) =>
+    request<{ text: string }>('/api/ai/proofread', { method: 'POST', body: JSON.stringify({ text }) }),
+  streamContinue: (nodeId: string, beatIndex: number, onChunk: (text: string) => void) =>
+    streamRequest('/api/ai/stream/continue', { nodeId, beatIndex }, onChunk),
+  streamPolish: (text: string, onChunk: (text: string) => void) =>
+    streamRequest('/api/ai/stream/polish', { text }, onChunk),
+  streamProofread: (text: string, onChunk: (text: string) => void) =>
+    streamRequest('/api/ai/stream/proofread', { text }, onChunk),
+  getAiUsage: () => request<AiUsage>('/api/ai/usage'),
+  resetAiUsage: () => request<AiUsage>('/api/ai/usage/reset', { method: 'POST' }),
 }

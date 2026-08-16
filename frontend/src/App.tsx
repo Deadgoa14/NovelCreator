@@ -6,12 +6,14 @@ import { ProjectGate } from './components/ProjectGate'
 import { DialogProvider } from './components/Dialog'
 import { Sidebar } from './components/Sidebar'
 import { EditorPane } from './components/EditorPane'
+import { AiTaskPanel } from './components/AiTaskPanel'
 import { NodesPage } from './pages/NodesPage'
 import { ConceptsPage } from './pages/ConceptsPage'
 import { WhiteboardPage } from './pages/WhiteboardPage'
 import { RelationsPage } from './pages/RelationsPage'
 import { ExportPage } from './pages/ExportPage'
 import { SettingsPage } from './pages/SettingsPage'
+import { AiSettingsPage } from './pages/AiSettingsPage'
 
 export default function App() {
   const ready = useStore((s) => s.ready)
@@ -64,6 +66,7 @@ export default function App() {
         <Sidebar />
         <div className="flex-1 flex min-w-0">
           <div className="w-[58%] min-w-[360px] border-r border-gray-200 dark:border-gray-700 overflow-hidden flex flex-col">
+            {activePage === 'ai' && <AiSettingsPage />}
             {activePage === 'nodes' && <NodesPage />}
             {activePage === 'whiteboard' && <WhiteboardPage />}
             {activePage === 'concepts' && <ConceptsPage scope="concepts" />}
@@ -77,6 +80,7 @@ export default function App() {
           </div>
         </div>
       </div>
+      <AiTaskPanel />
     </DialogProvider>
   )
 }

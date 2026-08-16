@@ -129,6 +129,9 @@ def create_project(path, name):
     write_json_file(WHITEBOARD_FILE, {"items": []})
     write_json_file(RELATIONS_BOARD_FILE, {"items": []})
     write_json_file(EXPORT_SETTINGS_FILE, dict(DEFAULT_EXPORT_SETTINGS))
+    from . import recent_store
+
+    recent_store.record(path, name or os.path.basename(path))
     return load_project()
 
 
@@ -138,7 +141,11 @@ def open_project(path):
         raise ProjectError("该路径不是有效项目（缺少 project.json）")
     set_current(path)
     _migrate_legacy()
-    return load_project()
+    data = load_project()
+    from . import recent_store
+
+    recent_store.record(path, (data.get("project") or {}).get("name"))
+    return data
 
 
 def load_project():

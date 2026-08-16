@@ -1,8 +1,9 @@
 import { useMemo, useState } from 'react'
-import { api } from '../api'
+import { api, errorMessage } from '../api'
 import { useStore } from '../store'
 import { useSettings } from '../settings'
 import { useDialog } from '../components/Dialog'
+import { uid } from '../util'
 import type { Beat } from '../types'
 
 type ListItem =
@@ -19,9 +20,11 @@ export function NodesPage() {
   const requestFocusBeat = useStore((s) => s.requestFocusBeat)
   const patchNodes = useStore((s) => s.patchNodes)
   const patchVolumes = useStore((s) => s.patchVolumes)
+  const patchCurrentNode = useStore((s) => s.patchCurrentNode)
   const chapterNumberingPerVolume = useSettings((s) => s.chapterNumberingPerVolume)
   const [showChapterNumber, setShowChapterNumber] = useState(false)
-  const { confirm } = useDialog()
+  const [aiBusy, setAiBusy] = useState(false)
+  const { confirm, alert } = useDialog()
 
   const items = useMemo<ListItem[]>(() => {
     const list: ListItem[] = [
@@ -74,6 +77,33 @@ export function NodesPage() {
     setCurrentNodeId(null)
   }
 
+  async function continueBeat() {
+    if (!currentNodeId) {
+      await alert('请先选择一个剧情节点')
+      return
+    }
+    setAiBusy(true)
+    try {
+      const r = await api.aiBeat(currentNodeId)
+      const text = (r.text || '').trim()
+      if (!text) {
+        await alert('未生成梗概，请重试')
+        return
+      }
+      const n = await api.getNode(currentNodeId)
+      const next = [...(n.meta.beats ?? []), { id: uid('beat'), text, body: '' }]
+      await api.updateNode(currentNodeId, { beats: next })
+      patchNodes(await api.listNodes())
+      if (useStore.getState().currentNodeId === currentNodeId) {
+        patchCurrentNode({ beats: next })
+      }
+    } catch (e) {
+      await alert(errorMessage(e))
+    } finally {
+      setAiBusy(false)
+    }
+  }
+
   async function deleteNode(id: string) {
     if (!(await confirm('删除该剧情节点？正文不可恢复。'))) return
     await api.deleteNode(id)
@@ -121,6 +151,14 @@ export function NodesPage() {
             className="px-3 py-1.5 text-xs bg-blue-600 text-white rounded-md hover:bg-blue-700"
           >
             ＋ 新建节点
+          </button>
+          <button
+            onClick={continueBeat}
+            disabled={aiBusy}
+            className="px-3 py-1.5 text-xs bg-violet-600 text-white rounded-md hover:bg-violet-700 disabled:opacity-50"
+            title="根据当前节点的已有梗概，AI 续写一条新梗概"
+          >
+            ✨ 在当前梗概下AI续写梗概
           </button>
           <button
             onClick={createVolume}

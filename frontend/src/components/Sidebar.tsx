@@ -3,6 +3,7 @@ import { useStore, type Page } from '../store'
 import { useDialog } from './Dialog'
 
 const TABS: { id: Page; label: string; icon: string }[] = [
+  { id: 'ai', label: 'AI 设置', icon: '🤖' },
   { id: 'nodes', label: '剧情节点', icon: '📄' },
   { id: 'whiteboard', label: '故事线白板', icon: '🗺️' },
   { id: 'concepts', label: '概念', icon: '🏷️' },
@@ -16,6 +17,7 @@ export function Sidebar() {
   const activePage = useStore((s) => s.activePage)
   const setActivePage = useStore((s) => s.setActivePage)
   const projectName = useStore((s) => s.projectName)
+  const resetProject = useStore((s) => s.resetProject)
   const { confirm } = useDialog()
 
   return (
@@ -41,6 +43,13 @@ export function Sidebar() {
         ))}
       </nav>
       <div className="px-3 py-3 border-t border-gray-700/70">
+        <button
+          onClick={() => resetProject()}
+          className="w-full flex items-center justify-center gap-2 px-3 py-2 mb-1 text-sm text-gray-300 hover:text-white hover:bg-gray-700 rounded-md transition-colors"
+        >
+          <span>⇄</span>
+          <span>切换项目</span>
+        </button>
         <button
           onClick={async () => {
             if (await confirm('退出程序并停止本地服务？')) {

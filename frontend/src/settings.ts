@@ -5,6 +5,7 @@ export type WhiteboardDirection = 'lr' | 'rl' | 'tb' | 'bt'
 
 export interface Settings {
   theme: 'light' | 'dark'
+  autoOpenLast: boolean
   whiteboardBeatFontSize: number
   chapterNumberingPerVolume: boolean
   whiteboardDirection: WhiteboardDirection
@@ -33,6 +34,7 @@ export const useSettings = create<Settings>()(
   persist(
     (set) => ({
       theme: 'light',
+      autoOpenLast: true,
       whiteboardBeatFontSize: 11,
       chapterNumberingPerVolume: false,
       whiteboardDirection: 'lr',
