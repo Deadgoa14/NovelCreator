@@ -1,11 +1,12 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { api } from '../api'
 import { useStore } from '../store'
+import { useSettings } from '../settings'
 import { useDialog } from '../components/Dialog'
 import type { Beat } from '../types'
 
 type ListItem =
-  | { kind: 'node'; id: string; order: number; title: string; beatCount: number; characterCount: number; beats: Beat[]; indented: boolean }
+  | { kind: 'node'; id: string; order: number; title: string; beatCount: number; characterCount: number; beats: Beat[]; indented: boolean; chapterNumber: number }
   | { kind: 'volume'; id: string; order: number; name: string }
 
 export function NodesPage() {
@@ -18,6 +19,8 @@ export function NodesPage() {
   const requestFocusBeat = useStore((s) => s.requestFocusBeat)
   const patchNodes = useStore((s) => s.patchNodes)
   const patchVolumes = useStore((s) => s.patchVolumes)
+  const chapterNumberingPerVolume = useSettings((s) => s.chapterNumberingPerVolume)
+  const [showChapterNumber, setShowChapterNumber] = useState(false)
   const { confirm } = useDialog()
 
   const items = useMemo<ListItem[]>(() => {
@@ -31,21 +34,27 @@ export function NodesPage() {
         characterCount: n.characterCount,
         beats: n.beats ?? [],
         indented: false,
+        chapterNumber: 0,
       })),
       ...volumes.map((v) => ({ kind: 'volume' as const, id: v.id, order: v.order, name: v.name })),
     ]
     list.sort((a, b) => a.order - b.order || a.id.localeCompare(b.id))
-    // Nodes that come after a volume (until the next volume) are indented under it.
+    // Nodes after a volume (until the next volume) are indented under it; also
+    // compute the chapter number (volumes don't count, optional per-volume reset).
     let insideVolume = false
+    let chapter = 0
     for (const it of list) {
       if (it.kind === 'volume') {
         insideVolume = true
+        if (chapterNumberingPerVolume) chapter = 0
       } else {
         it.indented = insideVolume
+        chapter += 1
+        it.chapterNumber = chapter
       }
     }
     return list
-  }, [nodes, volumes])
+  }, [nodes, volumes, chapterNumberingPerVolume])
 
   async function refreshNodes() {
     patchNodes(await api.listNodes())
@@ -97,6 +106,17 @@ export function NodesPage() {
         <h2 className="text-sm font-semibold text-gray-700 dark:text-gray-200">剧情节点 / 卷</h2>
         <div className="flex gap-2">
           <button
+            onClick={() => setShowChapterNumber((v) => !v)}
+            title={showChapterNumber ? '切换为显示 order' : '切换为显示章节数'}
+            className={`px-3 py-1.5 text-xs rounded-md border ${
+              showChapterNumber
+                ? 'bg-blue-600 text-white border-blue-700 hover:bg-blue-700'
+                : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-100 dark:bg-gray-700 dark:text-gray-200 dark:border-gray-600'
+            }`}
+          >
+            {showChapterNumber ? '章节数' : 'order'}
+          </button>
+          <button
             onClick={createNode}
             className="px-3 py-1.5 text-xs bg-blue-600 text-white rounded-md hover:bg-blue-700"
           >
@@ -135,7 +155,7 @@ export function NodesPage() {
                   }}
                   className="group flex items-center gap-2 px-3 py-2.5 cursor-pointer"
                 >
-                  <span className="text-xs text-gray-400 dark:text-gray-500 w-5 text-right shrink-0">{it.order}</span>
+                  <span className="text-xs text-gray-400 dark:text-gray-500 w-5 text-right shrink-0">{showChapterNumber ? it.chapterNumber : it.order}</span>
                   <div className="flex-1 min-w-0">
                     <div className="text-sm text-gray-800 dark:text-gray-200 truncate">{it.title || '未命名节点'}</div>
                     <div className="text-[11px] text-gray-400 dark:text-gray-500">
@@ -214,7 +234,7 @@ export function NodesPage() {
                   : 'border-transparent hover:bg-gray-100 dark:hover:bg-gray-800'
               }`}
             >
-              <span className="text-xs text-gray-400 dark:text-gray-500 w-5 text-right shrink-0">{it.order}</span>
+              <span className="text-xs text-gray-400 dark:text-gray-500 w-5 text-right shrink-0">{showChapterNumber ? '' : it.order}</span>
               <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300 shrink-0">
                 卷
               </span>

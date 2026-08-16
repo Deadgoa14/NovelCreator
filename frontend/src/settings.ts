@@ -1,9 +1,13 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 
+export type WhiteboardDirection = 'lr' | 'rl' | 'tb' | 'bt'
+
 export interface Settings {
   theme: 'light' | 'dark'
   whiteboardBeatFontSize: number
+  chapterNumberingPerVolume: boolean
+  whiteboardDirection: WhiteboardDirection
   previewTextBg: string
   previewMarginBg: string
   previewFontFamily: string
@@ -30,6 +34,8 @@ export const useSettings = create<Settings>()(
     (set) => ({
       theme: 'light',
       whiteboardBeatFontSize: 11,
+      chapterNumberingPerVolume: false,
+      whiteboardDirection: 'lr',
       previewTextBg: '#ffffff',
       previewMarginBg: '#f9fafb',
       previewFontFamily: DEFAULT_FONT_FAMILY,

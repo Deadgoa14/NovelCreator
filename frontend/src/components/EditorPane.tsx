@@ -60,13 +60,15 @@ function AutoGrowTextarea({
   onChange,
   placeholder,
   className,
+  textareaRef,
 }: {
   value: string
   onChange: (v: string) => void
   placeholder?: string
   className?: string
+  textareaRef?: (el: HTMLTextAreaElement | null) => void
 }) {
-  const ref = useRef<HTMLTextAreaElement>(null)
+  const ref = useRef<HTMLTextAreaElement | null>(null)
   useLayoutEffect(() => {
     const el = ref.current
     if (!el) return
@@ -75,7 +77,10 @@ function AutoGrowTextarea({
   }, [value])
   return (
     <textarea
-      ref={ref}
+      ref={(el) => {
+        ref.current = el
+        textareaRef?.(el)
+      }}
       value={value}
       onChange={(e) => onChange(e.target.value)}
       placeholder={placeholder}
@@ -103,22 +108,28 @@ export function EditorPane() {
   const volTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const volPendingRef = useRef<Partial<Volume>>({})
   const beatBodyRefs = useRef<Record<string, HTMLTextAreaElement | null>>({})
+  const beatTextRefs = useRef<Record<string, HTMLTextAreaElement | null>>({})
   const beatSectionRefs = useRef<Record<string, HTMLElement | null>>({})
+  const lastFocusNonce = useRef<number | null>(null)
 
   const selectedVolume: Volume | null = volumes.find((v) => v.id === currentVolumeId) ?? null
 
   // Jump to a specific beat entry (from a beat button elsewhere): scroll the whole
-  // entry to the top of the editor and put the cursor at the start of its body.
+  // entry to the top of the editor and put the cursor at the end of its 梗概 text.
+  // Handled once per request (nonce); retries until the node + textarea are mounted.
   useEffect(() => {
     const fb = focusBeat
     if (!fb) return
+    if (lastFocusNonce.current === fb.nonce) return
     if (!currentNode || currentNode.id !== fb.nodeId) return
     const section = beatSectionRefs.current[fb.beatId]
-    const el = beatBodyRefs.current[fb.beatId]
+    const el = beatTextRefs.current[fb.beatId]
     if (!section || !el) return
+    lastFocusNonce.current = fb.nonce
     section.scrollIntoView({ behavior: 'smooth', block: 'start' })
     el.focus({ preventScroll: true })
-    el.setSelectionRange(0, 0)
+    const len = el.value.length
+    el.setSelectionRange(len, len)
   }, [focusBeat, currentNode])
 
   function scheduleSave(patch: { title?: string; beats?: Beat[] }) {
@@ -266,6 +277,9 @@ export function EditorPane() {
               value={b.text}
               onChange={(v) => onBeatChange(i, { text: v })}
               placeholder={`梗概 ${i + 1}（不导出）`}
+              textareaRef={(el) => {
+                beatTextRefs.current[b.id] = el
+              }}
               className="flex-1 resize-none overflow-hidden text-[0.95em] font-semibold bg-transparent border-b border-gray-200 dark:border-gray-700 focus:border-blue-400 focus:outline-none pb-1 italic opacity-70 text-gray-600 dark:text-gray-300"
             />
             <button onClick={() => removeBeat(i)} className="text-gray-300 hover:text-red-500 text-sm shrink-0" title="删除条目">

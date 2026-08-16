@@ -84,7 +84,13 @@ export const api = {
 
   export: (
     storylineId: string,
-    opts: { indentParagraph: boolean; paragraphGap: number; chapterHeadBlank: number; chapterTailBlank: number },
+    opts: {
+      indentParagraph: boolean
+      paragraphGap: number
+      chapterHeadBlank: number
+      chapterTailBlank: number
+      chapterNumberingPerVolume: boolean
+    },
   ) =>
     request<{ filename: string; content: string; charCount: number }>('/api/export', {
       method: 'POST',

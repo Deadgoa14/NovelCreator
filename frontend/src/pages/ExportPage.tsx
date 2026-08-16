@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { api, errorMessage } from '../api'
 import { useStore } from '../store'
+import { useSettings } from '../settings'
 import type { ExportSettings } from '../types'
 
 function GapSwitch({
@@ -43,6 +44,7 @@ export function ExportPage() {
   const storylines = useStore((s) => s.storylines)
   const exportSettings = useStore((s) => s.exportSettings)
   const patchExportSettings = useStore((s) => s.patchExportSettings)
+  const chapterNumberingPerVolume = useSettings((s) => s.chapterNumberingPerVolume)
   const [selectedId, setSelectedId] = useState<string>(storylines[0]?.id ?? '')
   const [content, setContent] = useState('')
   const [filename, setFilename] = useState('')
@@ -76,6 +78,7 @@ export function ExportPage() {
         paragraphGap,
         chapterHeadBlank: headEnabled ? headLines : 0,
         chapterTailBlank: tailEnabled ? tailLines : 0,
+        chapterNumberingPerVolume,
       })
       setContent(r.content)
       setFilename(r.filename)

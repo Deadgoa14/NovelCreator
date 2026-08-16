@@ -1,4 +1,4 @@
-import { FONT_FAMILIES, FONT_SIZES, useSettings } from '../settings'
+import { FONT_FAMILIES, FONT_SIZES, useSettings, type WhiteboardDirection } from '../settings'
 
 const inputCls =
   'w-full text-sm border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-100'
@@ -67,6 +67,32 @@ export function SettingsPage() {
               onChange={(e) => s.set({ whiteboardBeatFontSize: Number(e.target.value) || 11 })}
               className="w-20 text-sm border border-gray-300 rounded-md px-2 py-1.5 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-100"
             />
+          </Row>
+        </Section>
+
+        <Section title="剧情节点">
+          <Row label="每一卷章节数从头开始计数">
+            <input
+              type="checkbox"
+              checked={s.chapterNumberingPerVolume}
+              onChange={(e) => s.set({ chapterNumberingPerVolume: e.target.checked })}
+              className="h-4 w-4 rounded border-gray-300"
+            />
+          </Row>
+        </Section>
+
+        <Section title="故事线白板">
+          <Row label="默认发展顺序">
+            <select
+              value={s.whiteboardDirection}
+              onChange={(e) => s.set({ whiteboardDirection: e.target.value as WhiteboardDirection })}
+              className={inputCls}
+            >
+              <option value="lr">左 → 右</option>
+              <option value="rl">右 → 左</option>
+              <option value="tb">上 → 下</option>
+              <option value="bt">下 → 上</option>
+            </select>
           </Row>
         </Section>
 

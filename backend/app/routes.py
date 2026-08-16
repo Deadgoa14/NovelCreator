@@ -93,6 +93,7 @@ class ExportReq(BaseModel):
     paragraphGap: int = 0
     chapterHeadBlank: int = 0
     chapterTailBlank: int = 0
+    chapterNumberingPerVolume: bool = False
 
 
 class ExportSettingsReq(BaseModel):
@@ -319,6 +320,7 @@ def export(req: ExportReq):
             "paragraphGap": req.paragraphGap,
             "chapterHeadBlank": req.chapterHeadBlank,
             "chapterTailBlank": req.chapterTailBlank,
+            "chapterNumberingPerVolume": req.chapterNumberingPerVolume,
         },
     )
     name = sl.get("name") or "导出"

@@ -41,8 +41,8 @@ def _render_chapter(index, title, paragraphs, o):
     return "\n".join(lines)
 
 
-def _render_volume(volume, o):
-    lines = [volume.get("name", "")]
+def _render_volume(volume, index, o):
+    lines = [f"第{index}卷  {volume.get('name', '')}"]
     for _ in range(max(0, o["chapterHeadBlank"])):
         lines.append("")
     paragraphs = _body_paragraphs(volume.get("body"), o)
@@ -103,6 +103,7 @@ def export_storyline(storyline, opts=None):
         "paragraphGap": int(opts.get("paragraphGap") or 0),
         "chapterHeadBlank": int(opts.get("chapterHeadBlank") or 0),
         "chapterTailBlank": int(opts.get("chapterTailBlank") or 0),
+        "chapterNumberingPerVolume": bool(opts.get("chapterNumberingPerVolume")),
     }
     nodes_dir = os.path.join(ps.get_current_path(), ps.NODES_DIR)
 
@@ -121,6 +122,7 @@ def export_storyline(storyline, opts=None):
                 break
         volume_map[n["id"]] = vol
     volume_by_id = {v["id"]: v for v in volumes}
+    volume_index = {v["id"]: i + 1 for i, v in enumerate(volumes)}
 
     chapters = []
     char_count = 0
@@ -138,9 +140,11 @@ def export_storyline(storyline, opts=None):
             continue  # node has no prose -> no chapter emitted
         vol = _volume_of_node(nid, volume_map)
         if vol and vol["id"] not in emitted_volumes:
-            chapters.append(_render_volume(vol, o))
+            chapters.append(_render_volume(vol, volume_index.get(vol["id"], 0), o))
             char_count += sum(1 for ch in (vol.get("body") or "") if not ch.isspace())
             emitted_volumes.add(vol["id"])
+            if o["chapterNumberingPerVolume"]:
+                chapter_no = 0
         chapter_no += 1
         for beat in meta.get("beats", []) or []:
             char_count += sum(1 for ch in (beat.get("body") or "") if not ch.isspace())

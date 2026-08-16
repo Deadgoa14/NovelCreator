@@ -16,7 +16,7 @@ import {
 import '@xyflow/react/dist/style.css'
 import { api } from '../api'
 import { useStore } from '../store'
-import { useSettings } from '../settings'
+import { useSettings, type WhiteboardDirection } from '../settings'
 import { useDialog } from '../components/Dialog'
 import type { Beat, Storyline } from '../types'
 
@@ -28,27 +28,51 @@ type Menu =
   | { kind: 'edge'; x: number; y: number; edgeId: string }
   | { kind: 'pane'; x: number; y: number }
 
+// Handle normal direction per whiteboard flow direction (source = 出口, target = 入口).
+const DIRECTION_SOURCE: Record<WhiteboardDirection, Position> = {
+  lr: Position.Right,
+  rl: Position.Left,
+  tb: Position.Bottom,
+  bt: Position.Top,
+}
+const DIRECTION_TARGET: Record<WhiteboardDirection, Position> = {
+  lr: Position.Left,
+  rl: Position.Right,
+  tb: Position.Top,
+  bt: Position.Bottom,
+}
+
 function PlotNode({ data, selected, id }: NodeProps<FlowNode>) {
   const beatFontSize = useSettings((s) => s.whiteboardBeatFontSize)
+  const direction = useSettings((s) => s.whiteboardDirection)
   const setCurrentNodeId = useStore((s) => s.setCurrentNodeId)
+  const setCurrentVolumeId = useStore((s) => s.setCurrentVolumeId)
   const requestFocusBeat = useStore((s) => s.requestFocusBeat)
   const multi = data.count > 1
+  const vertical = direction === 'tb' || direction === 'bt'
   return (
     <div className="relative">
       <div
-        className={`px-3 py-2 rounded-lg bg-white dark:bg-gray-800 shadow-md border-2 min-w-[160px] text-center ${
-          selected ? 'ring-2 ring-blue-400' : ''
-        }`}
+        className={`rounded-lg bg-white dark:bg-gray-800 shadow-md border-2 text-center ${
+          vertical ? 'px-2 py-3 w-14' : 'px-3 py-2 min-w-[160px]'
+        } ${selected ? 'ring-2 ring-blue-400' : ''}`}
         style={{ borderColor: data.color }}
       >
-        <Handle type="target" position={Position.Left} />
-        <div className="text-sm text-gray-800 dark:text-gray-200 font-medium">{data.label}</div>
+        <Handle type="target" position={DIRECTION_TARGET[direction]} />
+        <div
+          className="text-sm text-gray-800 dark:text-gray-200 font-medium"
+          style={vertical ? { writingMode: 'vertical-rl', maxHeight: 200 } : undefined}
+        >
+          {data.label}
+        </div>
         {multi && <div className="text-[10px] text-purple-600 mt-0.5">交汇 · {data.count} 条线</div>}
-        <Handle type="source" position={Position.Right} />
+        <Handle type="source" position={DIRECTION_SOURCE[direction]} />
       </div>
       {data.expanded && data.beats.length > 0 && (
         <div
-          className="absolute top-full left-1/2 -translate-x-1/2 mt-1 w-64 bg-white dark:bg-gray-800 rounded-md shadow-lg border border-gray-200 dark:border-gray-700 p-2 text-left space-y-1 z-[100]"
+          className={`absolute w-64 bg-white dark:bg-gray-800 rounded-md shadow-lg border border-gray-200 dark:border-gray-700 p-2 text-left space-y-1 z-[100] ${
+            vertical ? 'left-full top-1/2 -translate-y-1/2 ml-1' : 'top-full left-1/2 -translate-x-1/2 mt-1'
+          }`}
           style={{ fontSize: beatFontSize }}
         >
           {data.beats.map((b, i) => (
@@ -57,6 +81,7 @@ function PlotNode({ data, selected, id }: NodeProps<FlowNode>) {
               onClick={(e) => {
                 e.stopPropagation()
                 setCurrentNodeId(id)
+                setCurrentVolumeId(null)
                 requestFocusBeat(id, b.id)
               }}
               onPointerDown={(e) => e.stopPropagation()}
@@ -72,6 +97,13 @@ function PlotNode({ data, selected, id }: NodeProps<FlowNode>) {
 }
 
 function StartNode({ data }: NodeProps<FlowNode>) {
+  const direction = useSettings((s) => s.whiteboardDirection)
+  const sourcePos = DIRECTION_SOURCE[direction]
+  const offset: React.CSSProperties = {}
+  if (sourcePos === Position.Left) offset.left = -7
+  else if (sourcePos === Position.Right) offset.right = -7
+  else if (sourcePos === Position.Bottom) offset.bottom = -7
+  else offset.top = -7
   return (
     <div className="relative cursor-grab active:cursor-grabbing">
       <div
@@ -83,8 +115,8 @@ function StartNode({ data }: NodeProps<FlowNode>) {
       </div>
       <Handle
         type="source"
-        position={Position.Right}
-        style={{ width: 14, height: 14, background: '#fff', border: `2px solid ${data.color}`, right: -7 }}
+        position={sourcePos}
+        style={{ width: 14, height: 14, background: '#fff', border: `2px solid ${data.color}`, ...offset }}
       />
     </div>
   )
@@ -101,6 +133,7 @@ export function WhiteboardPage() {
   const patchWhiteboard = useStore((s) => s.patchWhiteboard)
   const setCurrentNodeId = useStore((s) => s.setCurrentNodeId)
   const setActivePage = useStore((s) => s.setActivePage)
+  const direction = useSettings((s) => s.whiteboardDirection)
 
   const [activeLineId, setActiveLineId] = useState<string | null>(null)
   const [menu, setMenu] = useState<Menu | null>(null)
@@ -167,7 +200,15 @@ export function WhiteboardPage() {
         const old = existing.get(`start:${sl.id}`)
         const firstId = sl.nodes.find((id) => posById.has(id))
         const first = firstId ? posById.get(firstId)! : null
-        const fallback = first ? { x: first.x - 110, y: first.y + 6 + idx * 26 } : { x: 40, y: idx * 90 + 40 }
+        const fallback = first
+          ? direction === 'rl'
+            ? { x: first.x + 200, y: first.y + 6 + idx * 26 }
+            : direction === 'tb'
+              ? { x: first.x + 8 + idx * 30, y: first.y - 90 }
+              : direction === 'bt'
+                ? { x: first.x + 8 + idx * 30, y: first.y + 240 }
+                : { x: first.x - 130, y: first.y + 6 + idx * 26 }
+          : { x: 40, y: idx * 90 + 40 }
         return {
           id: `start:${sl.id}`,
           type: 'startNode',
@@ -185,7 +226,7 @@ export function WhiteboardPage() {
       return [...plotNodes, ...startNodes]
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [nodes, storylines, expandedIds, whiteboard, activeLineId])
+  }, [nodes, storylines, expandedIds, whiteboard, activeLineId, direction])
 
   const edges = useMemo<Edge[]>(() => {
     const existing = new Set(nodes.map((n) => n.id))
