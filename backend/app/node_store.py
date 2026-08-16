@@ -93,14 +93,17 @@ def get_node(node_id):
 
 def create_node(title=""):
     node_id = new_id("node")
-    meta = {
-        "id": node_id,
-        "title": title or "未命名节点",
-        "order": max_order() + 1,
-        "beats": [],
-        "characters": [],
-    }
-    _write_node(node_id, meta, "")
+    with _lock:
+        # Always place new nodes at the very bottom (max order + 1),
+        # never relative to any currently-selected node.
+        meta = {
+            "id": node_id,
+            "title": title or "未命名节点",
+            "order": max_order() + 1,
+            "beats": [],
+            "characters": [],
+        }
+        _write_node(node_id, meta, "")
     ps.touch_project()
     return get_node(node_id)
 

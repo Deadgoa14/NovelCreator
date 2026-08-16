@@ -2,9 +2,10 @@ import { useMemo } from 'react'
 import { api } from '../api'
 import { useStore } from '../store'
 import { useDialog } from '../components/Dialog'
+import type { Beat } from '../types'
 
 type ListItem =
-  | { kind: 'node'; id: string; order: number; title: string; beatCount: number; characterCount: number }
+  | { kind: 'node'; id: string; order: number; title: string; beatCount: number; characterCount: number; beats: Beat[]; indented: boolean }
   | { kind: 'volume'; id: string; order: number; name: string }
 
 export function NodesPage() {
@@ -14,6 +15,7 @@ export function NodesPage() {
   const currentVolumeId = useStore((s) => s.currentVolumeId)
   const setCurrentNodeId = useStore((s) => s.setCurrentNodeId)
   const setCurrentVolumeId = useStore((s) => s.setCurrentVolumeId)
+  const requestFocusBeat = useStore((s) => s.requestFocusBeat)
   const patchNodes = useStore((s) => s.patchNodes)
   const patchVolumes = useStore((s) => s.patchVolumes)
   const { confirm } = useDialog()
@@ -27,10 +29,21 @@ export function NodesPage() {
         title: n.title,
         beatCount: n.beatCount,
         characterCount: n.characterCount,
+        beats: n.beats ?? [],
+        indented: false,
       })),
       ...volumes.map((v) => ({ kind: 'volume' as const, id: v.id, order: v.order, name: v.name })),
     ]
     list.sort((a, b) => a.order - b.order || a.id.localeCompare(b.id))
+    // Nodes that come after a volume (until the next volume) are indented under it.
+    let insideVolume = false
+    for (const it of list) {
+      if (it.kind === 'volume') {
+        insideVolume = true
+      } else {
+        it.indented = insideVolume
+      }
+    }
     return list
   }, [nodes, volumes])
 
@@ -109,57 +122,82 @@ export function NodesPage() {
             return (
               <div
                 key={it.id}
-                onClick={() => {
-                  setCurrentNodeId(it.id)
-                  setCurrentVolumeId(null)
-                }}
-                className={`group flex items-center gap-2 px-3 py-2.5 cursor-pointer border-l-2 transition-colors ${
+                className={`border-l-2 transition-colors ${it.indented ? 'ml-6' : ''} ${
                   it.id === currentNodeId && !currentVolumeId
                     ? 'bg-blue-50 dark:bg-blue-900/30 border-blue-500'
                     : 'border-transparent hover:bg-gray-100 dark:hover:bg-gray-800'
                 }`}
               >
-                <span className="text-xs text-gray-400 dark:text-gray-500 w-5 text-right shrink-0">{it.order}</span>
-                <div className="flex-1 min-w-0">
-                  <div className="text-sm text-gray-800 dark:text-gray-200 truncate">{it.title || '未命名节点'}</div>
-                  <div className="text-[11px] text-gray-400 dark:text-gray-500">
-                    {it.beatCount} 条梗概 · {it.characterCount} 人物
-                  </div>
-                </div>
-                <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 shrink-0">
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      moveItem(i, -1)
-                    }}
-                    disabled={i === 0}
-                    className="text-gray-400 hover:text-blue-600 disabled:opacity-30 text-xs px-1"
-                    title="上移"
-                  >
-                    ↑
-                  </button>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      moveItem(i, 1)
-                    }}
-                    disabled={i === items.length - 1}
-                    className="text-gray-400 hover:text-blue-600 disabled:opacity-30 text-xs px-1"
-                    title="下移"
-                  >
-                    ↓
-                  </button>
-                </div>
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    deleteNode(it.id)
+                <div
+                  onClick={() => {
+                    setCurrentNodeId(it.id)
+                    setCurrentVolumeId(null)
                   }}
-                  className="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-red-500 text-xs px-1"
-                  title="删除"
+                  className="group flex items-center gap-2 px-3 py-2.5 cursor-pointer"
                 >
-                  ✕
-                </button>
+                  <span className="text-xs text-gray-400 dark:text-gray-500 w-5 text-right shrink-0">{it.order}</span>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm text-gray-800 dark:text-gray-200 truncate">{it.title || '未命名节点'}</div>
+                    <div className="text-[11px] text-gray-400 dark:text-gray-500">
+                      {it.beatCount} 条梗概 · {it.characterCount} 人物
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 shrink-0">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        moveItem(i, -1)
+                      }}
+                      disabled={i === 0}
+                      className="text-gray-400 hover:text-blue-600 disabled:opacity-30 text-xs px-1"
+                      title="上移"
+                    >
+                      ↑
+                    </button>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        moveItem(i, 1)
+                      }}
+                      disabled={i === items.length - 1}
+                      className="text-gray-400 hover:text-blue-600 disabled:opacity-30 text-xs px-1"
+                      title="下移"
+                    >
+                      ↓
+                    </button>
+                  </div>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      deleteNode(it.id)
+                    }}
+                    className="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-red-500 text-xs px-1"
+                    title="删除"
+                  >
+                    ✕
+                  </button>
+                </div>
+
+                {it.beats.length > 0 && (
+                  <div className="pl-10 pr-3 pb-2.5 space-y-1">
+                    {it.beats.map((b, bi) => (
+                      <button
+                        key={b.id}
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          setCurrentNodeId(it.id)
+                          setCurrentVolumeId(null)
+                          requestFocusBeat(it.id, b.id)
+                        }}
+                        className="w-full text-left text-xs px-2 py-1 rounded bg-gray-100 dark:bg-gray-800 hover:bg-blue-50 dark:hover:bg-blue-900/30 text-gray-600 dark:text-gray-300"
+                        title={b.text || `梗概 ${bi + 1}`}
+                      >
+                        <span className="text-gray-400 dark:text-gray-500 mr-1.5">{bi + 1}.</span>
+                        <span className="break-words">{b.text || '（空）'}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
             )
           }

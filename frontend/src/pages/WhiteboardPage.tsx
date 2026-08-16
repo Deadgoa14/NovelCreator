@@ -28,8 +28,10 @@ type Menu =
   | { kind: 'edge'; x: number; y: number; edgeId: string }
   | { kind: 'pane'; x: number; y: number }
 
-function PlotNode({ data, selected }: NodeProps<FlowNode>) {
+function PlotNode({ data, selected, id }: NodeProps<FlowNode>) {
   const beatFontSize = useSettings((s) => s.whiteboardBeatFontSize)
+  const setCurrentNodeId = useStore((s) => s.setCurrentNodeId)
+  const requestFocusBeat = useStore((s) => s.requestFocusBeat)
   const multi = data.count > 1
   return (
     <div className="relative">
@@ -50,9 +52,18 @@ function PlotNode({ data, selected }: NodeProps<FlowNode>) {
           style={{ fontSize: beatFontSize }}
         >
           {data.beats.map((b, i) => (
-            <div key={b.id} className="text-gray-600 dark:text-gray-300 leading-snug">
+            <button
+              key={b.id}
+              onClick={(e) => {
+                e.stopPropagation()
+                setCurrentNodeId(id)
+                requestFocusBeat(id, b.id)
+              }}
+              onPointerDown={(e) => e.stopPropagation()}
+              className="w-full text-left text-gray-600 dark:text-gray-300 leading-snug hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded px-1 py-0.5 break-words"
+            >
               <span className="text-gray-400 dark:text-gray-500">{i + 1}.</span> {b.text || '（空）'}
-            </div>
+            </button>
           ))}
         </div>
       )}
@@ -98,7 +109,8 @@ export function WhiteboardPage() {
   const [flowNodes, setFlowNodes, onNodesChangeRaw] = useNodesState<FlowNode>([])
   const { alert, confirm, prompt } = useDialog()
 
-  const activeLine = storylines.find((s) => s.id === activeLineId) ?? null
+  // The active storyline: explicit selection wins, otherwise the first storyline.
+  const activeLine = storylines.find((s) => s.id === activeLineId) ?? storylines[0] ?? null
 
   const nodePos = useMemo(
     () => new Map(whiteboard.filter((w) => w.type === 'node').map((w) => [w.nodeId, w.position])),
@@ -124,8 +136,10 @@ export function WhiteboardPage() {
   function nodeColor(nodeId: string): string {
     const lines = storylineOf(nodeId)
     if (lines.length === 0) return '#000000'
-    if (lines.length === 1) return lines[0].color
-    return '#7c3aed'
+    // Inactive storylines render black; the active storyline overrides with its color.
+    const inActive = activeLine !== null && lines.some((s) => s.id === activeLine.id)
+    if (!inActive) return '#000000'
+    return lines.length === 1 ? activeLine.color : '#7c3aed'
   }
 
   // sync flow nodes from store (preserve live positions, then stored, then auto).
@@ -159,30 +173,39 @@ export function WhiteboardPage() {
           type: 'startNode',
           position: old?.position ?? startPos.get(sl.id) ?? fallback,
           draggable: true,
-          data: { label: sl.name, color: sl.color, count: 0, beats: [], expanded: false },
+          data: {
+            label: sl.name,
+            color: sl.id === activeLine?.id ? sl.color : '#000000',
+            count: 0,
+            beats: [],
+            expanded: false,
+          },
         } as FlowNode
       })
       return [...plotNodes, ...startNodes]
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [nodes, storylines, expandedIds, whiteboard])
+  }, [nodes, storylines, expandedIds, whiteboard, activeLineId])
 
   const edges = useMemo<Edge[]>(() => {
     const existing = new Set(nodes.map((n) => n.id))
     const result: Edge[] = []
     for (const sl of storylines) {
+      const isActive = sl.id === activeLine?.id
+      const stroke = isActive ? sl.color : '#000000'
       if (sl.type === 'branch') {
         for (const be of sl.edges ?? []) {
           if (!existing.has(be.from) || !existing.has(be.to)) continue
-          const active = !!be.active
+          const active = isActive && !!be.active
+          const color = active ? sl.color : isActive ? '#9ca3af' : '#000000'
           result.push({
             id: `${sl.id}-${be.from}-${be.to}`,
             source: be.from,
             target: be.to,
             animated: active,
-            markerEnd: { type: MarkerType.ArrowClosed, color: active ? sl.color : '#9ca3af' },
+            markerEnd: { type: MarkerType.ArrowClosed, color },
             data: { lineId: sl.id, source: be.from, target: be.to, branch: true },
-            style: { stroke: active ? sl.color : '#9ca3af', strokeWidth: active ? 2 : 1.5 },
+            style: { stroke: color, strokeWidth: active ? 2 : 1.5 },
           })
         }
         if (sl.start && existing.has(sl.start)) {
@@ -190,10 +213,10 @@ export function WhiteboardPage() {
             id: `start:${sl.id}:edge`,
             source: `start:${sl.id}`,
             target: sl.start,
-            animated: true,
-            markerEnd: { type: MarkerType.ArrowClosed, color: sl.color },
+            animated: isActive,
+            markerEnd: { type: MarkerType.ArrowClosed, color: stroke },
             data: { lineId: sl.id, start: true },
-            style: { stroke: sl.color, strokeWidth: 2, strokeDasharray: '4 2' },
+            style: { stroke, strokeWidth: 2, strokeDasharray: '4 2' },
           })
         }
         continue
@@ -204,10 +227,10 @@ export function WhiteboardPage() {
           id: `${sl.id}-${ids[i]}-${ids[i + 1]}`,
           source: ids[i],
           target: ids[i + 1],
-          animated: true,
-          markerEnd: { type: MarkerType.ArrowClosed, color: sl.color },
+          animated: isActive,
+          markerEnd: { type: MarkerType.ArrowClosed, color: stroke },
           data: { lineId: sl.id, source: ids[i], target: ids[i + 1] },
-          style: { stroke: sl.color, strokeWidth: 2 },
+          style: { stroke, strokeWidth: 2 },
         })
       }
       if (ids.length) {
@@ -215,15 +238,15 @@ export function WhiteboardPage() {
           id: `start:${sl.id}:edge`,
           source: `start:${sl.id}`,
           target: ids[0],
-          animated: true,
-          markerEnd: { type: MarkerType.ArrowClosed, color: sl.color },
+          animated: isActive,
+          markerEnd: { type: MarkerType.ArrowClosed, color: stroke },
           data: { lineId: sl.id, start: true },
-          style: { stroke: sl.color, strokeWidth: 2, strokeDasharray: '4 2' },
+          style: { stroke, strokeWidth: 2, strokeDasharray: '4 2' },
         })
       }
     }
     return result
-  }, [storylines, nodes])
+  }, [storylines, nodes, activeLine])
 
   function onNodesChange(changes: NodeChange<FlowNode>[]) {
     onNodesChangeRaw(changes)
@@ -315,13 +338,13 @@ export function WhiteboardPage() {
     patchStorylines(data.storylines)
   }
 
-  function onEdgeClick(_: unknown, edge: Edge) {
+  async function changeBranchDirection(edge: Edge) {
     const d = edge.data as { lineId?: string; branch?: boolean } | undefined
     if (!d?.branch) return
     const line = storylines.find((s) => s.id === d.lineId)
     if (!line || line.type !== 'branch') return
     const edges = (line.edges ?? []).map((e) => (e.from === edge.source ? { ...e, active: e.to === edge.target } : e))
-    saveLine(line.id, { edges })
+    await saveLine(line.id, { edges })
   }
 
   async function quickGenerateOverallLine() {
@@ -406,6 +429,11 @@ export function WhiteboardPage() {
   }
 
   function onNodeClick(_: unknown, node: Node) {
+    if (node.type === 'startNode') {
+      // Clicking a storyline's start node switches the active storyline.
+      setActiveLineId(node.id.slice('start:'.length))
+      return
+    }
     if (node.type !== 'plotNode') return
     setCurrentNodeId(node.id)
     setExpandedIds((prev) => {
@@ -435,6 +463,9 @@ export function WhiteboardPage() {
   }
 
   const edgeForMenu = menu?.kind === 'edge' ? edges.find((e) => e.id === menu.edgeId) : undefined
+  const edgeData = edgeForMenu?.data as { lineId?: string; branch?: boolean; start?: boolean } | undefined
+  const canChangeBranch =
+    !!edgeData?.branch && activeLine != null && activeLine.type === 'branch' && edgeData.lineId === activeLine.id
 
   return (
     <div className="h-full flex flex-col bg-gray-50 dark:bg-gray-900">
@@ -462,8 +493,10 @@ export function WhiteboardPage() {
             <div
               key={s.id}
               onClick={() => setActiveLineId(s.id)}
-              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs cursor-pointer border ${
-                s.id === activeLineId ? 'bg-gray-100 dark:bg-gray-700 border-gray-400' : 'border-gray-200 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700'
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs cursor-pointer ${
+                s.id === activeLine?.id
+                  ? 'flowing-border border border-transparent bg-gray-100 dark:bg-gray-700'
+                  : 'border border-gray-200 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700'
               }`}
             >
               <span className="w-2.5 h-2.5 rounded-full" style={{ background: s.color }} />
@@ -509,9 +542,9 @@ export function WhiteboardPage() {
         <div className="mt-1.5 text-[11px] text-gray-400">
           {activeLine
             ? activeLine.type === 'branch'
-              ? '点击节点展开/闭合梗概；从节点右侧拖出多条连线形成分支；点击连线切换生效分支；右键空白/节点/连线有菜单'
-              : '点击节点展开/闭合梗概；从节点右侧拖到另一节点按顺序连接；右键空白/节点/连线有菜单'
-            : '点击上方故事线以选择，然后连接节点'}
+              ? '点击起始节点或上方按钮切换活动故事线；活动线流动、非活动线为黑色；点击节点展开/闭合梗概；右键空白/节点/连线有菜单'
+              : '点击起始节点或上方按钮切换活动故事线；活动线流动、非活动线为黑色；从节点右侧拖到另一节点按顺序连接；右键空白/节点/连线有菜单'
+            : '请先创建故事线，然后在节点之间建立连线'}
         </div>
       </div>
 
@@ -524,7 +557,6 @@ export function WhiteboardPage() {
           onConnect={onConnect}
           onNodeClick={onNodeClick}
           onNodeDragStop={onNodeDragStop}
-          onEdgeClick={onEdgeClick}
           onEdgeDoubleClick={onEdgeDoubleClick}
           onEdgesDelete={onEdgesDelete}
           deleteKeyCode={['Backspace', 'Delete']}
@@ -632,7 +664,18 @@ export function WhiteboardPage() {
             )}
             {menu.kind === 'edge' && edgeForMenu && (
               <>
-                {!(edgeForMenu.data as { start?: boolean })?.start && (
+                {canChangeBranch && (
+                  <button
+                    onClick={() => {
+                      changeBranchDirection(edgeForMenu)
+                      setMenu(null)
+                    }}
+                    className="block w-full text-left px-4 py-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 dark:text-gray-200"
+                  >
+                    改变分支走向
+                  </button>
+                )}
+                {!edgeData?.start && (
                   <button
                     onClick={() => {
                       disconnectEdge(edgeForMenu)
@@ -645,7 +688,7 @@ export function WhiteboardPage() {
                 )}
                 <button
                   onClick={() => {
-                    changeLineColor((edgeForMenu.data as { lineId?: string })?.lineId)
+                    changeLineColor(edgeData?.lineId)
                     setMenu(null)
                   }}
                   className="block w-full text-left px-4 py-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 dark:text-gray-200"

@@ -27,6 +27,8 @@ export interface Relation {
   from: string
   to: string
   label: string
+  sourceHandle?: string
+  targetHandle?: string
 }
 
 export interface StorylineEdge {

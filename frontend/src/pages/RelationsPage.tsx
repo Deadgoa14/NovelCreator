@@ -28,15 +28,17 @@ type Menu =
   | { kind: 'pane'; x: number; y: number }
 
 // 8 handle positions around a 120×120 circle (cardinal + 4 diagonals).
-const HANDLE_SPOTS: { id: string; top: string; left: string }[] = [
-  { id: 'top', top: '0%', left: '50%' },
-  { id: 'right', top: '50%', left: '100%' },
-  { id: 'bottom', top: '100%', left: '50%' },
-  { id: 'left', top: '50%', left: '0%' },
-  { id: 'tl', top: '14.6%', left: '14.6%' },
-  { id: 'tr', top: '14.6%', left: '85.4%' },
-  { id: 'bl', top: '85.4%', left: '14.6%' },
-  { id: 'br', top: '85.4%', left: '85.4%' },
+// Each handle carries the cardinal direction of its outward normal so edges
+// leave/enter the node along the socket's normal instead of all pointing up.
+const HANDLE_SPOTS: { id: string; top: string; left: string; position: Position }[] = [
+  { id: 'top', top: '0%', left: '50%', position: Position.Top },
+  { id: 'right', top: '50%', left: '100%', position: Position.Right },
+  { id: 'bottom', top: '100%', left: '50%', position: Position.Bottom },
+  { id: 'left', top: '50%', left: '0%', position: Position.Left },
+  { id: 'tl', top: '14.6%', left: '14.6%', position: Position.Left },
+  { id: 'tr', top: '14.6%', left: '85.4%', position: Position.Right },
+  { id: 'bl', top: '85.4%', left: '14.6%', position: Position.Left },
+  { id: 'br', top: '85.4%', left: '85.4%', position: Position.Right },
 ]
 
 function CharacterNode({ data }: NodeProps) {
@@ -54,8 +56,8 @@ function CharacterNode({ data }: NodeProps) {
           key={h.id}
           id={h.id}
           type="source"
-          position={Position.Top}
-          style={{ top: h.top, left: h.left, transform: 'translate(-50%, -50%)' }}
+          position={h.position}
+          style={{ top: h.top, left: h.left, right: 'auto', bottom: 'auto', transform: 'translate(-50%, -50%)' }}
         />
       ))}
       {HANDLE_SPOTS.map((h) => (
@@ -63,8 +65,8 @@ function CharacterNode({ data }: NodeProps) {
           key={`${h.id}-t`}
           id={`${h.id}-t`}
           type="target"
-          position={Position.Top}
-          style={{ top: h.top, left: h.left, transform: 'translate(-50%, -50%)', width: 24, height: 24, opacity: 0 }}
+          position={h.position}
+          style={{ top: h.top, left: h.left, right: 'auto', bottom: 'auto', transform: 'translate(-50%, -50%)', width: 24, height: 24, opacity: 0 }}
         />
       ))}
     </div>
@@ -120,6 +122,8 @@ export function RelationsPage() {
           id: `${r.from}-${r.to}-${i}`,
           source: r.from,
           target: r.to,
+          sourceHandle: r.sourceHandle,
+          targetHandle: r.targetHandle,
           label: r.label,
           markerEnd: { type: MarkerType.ArrowClosed },
           style: { stroke: '#6b7280', strokeWidth: 1.5 },
@@ -138,7 +142,16 @@ export function RelationsPage() {
     if (!conn.source || !conn.target) return
     const label = await prompt('关系（显示在连线上）', '')
     if (label === null) return
-    const next = [...relations, { from: conn.source, to: conn.target, label }]
+    const next = [
+      ...relations,
+      {
+        from: conn.source,
+        to: conn.target,
+        label,
+        sourceHandle: conn.sourceHandle ?? undefined,
+        targetHandle: conn.targetHandle ?? undefined,
+      },
+    ]
     await api.saveRelations(next)
     await refresh()
   }

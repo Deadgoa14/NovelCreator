@@ -1,4 +1,4 @@
-import { useRef } from 'react'
+import { useEffect, useLayoutEffect, useRef } from 'react'
 import type { ReactNode } from 'react'
 import { api } from '../api'
 import { useStore } from '../store'
@@ -18,6 +18,7 @@ function HighlightTextarea({
   fontSize,
   textColor,
   placeholder,
+  textareaRef,
 }: {
   value: string
   onChange: (v: string) => void
@@ -26,6 +27,7 @@ function HighlightTextarea({
   fontSize: number
   textColor: string
   placeholder?: string
+  textareaRef?: (el: HTMLTextAreaElement | null) => void
 }) {
   const shared: React.CSSProperties = {
     fontFamily,
@@ -42,12 +44,44 @@ function HighlightTextarea({
         {value ? highlightText(value, concepts) : <span className="text-gray-400 dark:text-gray-500">{placeholder}</span>}
       </pre>
       <textarea
+        ref={textareaRef}
         value={value}
         onChange={(e) => onChange(e.target.value)}
         className="absolute inset-0 w-full h-full resize-none overflow-hidden bg-transparent border-0 outline-none p-0 m-0"
         style={{ ...shared, color: 'transparent', caretColor: '#3b82f6' }}
       />
     </div>
+  )
+}
+
+// Single-line-ish textarea that grows vertically to fit its content (for 梗概 text).
+function AutoGrowTextarea({
+  value,
+  onChange,
+  placeholder,
+  className,
+}: {
+  value: string
+  onChange: (v: string) => void
+  placeholder?: string
+  className?: string
+}) {
+  const ref = useRef<HTMLTextAreaElement>(null)
+  useLayoutEffect(() => {
+    const el = ref.current
+    if (!el) return
+    el.style.height = 'auto'
+    el.style.height = `${el.scrollHeight}px`
+  }, [value])
+  return (
+    <textarea
+      ref={ref}
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      placeholder={placeholder}
+      rows={1}
+      className={className}
+    />
   )
 }
 
@@ -60,6 +94,7 @@ export function EditorPane() {
   const patchCurrentNode = useStore((s) => s.patchCurrentNode)
   const patchNodes = useStore((s) => s.patchNodes)
   const patchVolumes = useStore((s) => s.patchVolumes)
+  const focusBeat = useStore((s) => s.focusBeat)
   const { previewFontFamily, previewFontSize, previewTextBg, previewMarginBg, theme } = useSettings()
   const textColor = theme === 'dark' ? '#e5e7eb' : '#1f2937'
 
@@ -67,8 +102,24 @@ export function EditorPane() {
   const pendingRef = useRef<{ title?: string; beats?: Beat[] }>({})
   const volTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const volPendingRef = useRef<Partial<Volume>>({})
+  const beatBodyRefs = useRef<Record<string, HTMLTextAreaElement | null>>({})
+  const beatSectionRefs = useRef<Record<string, HTMLElement | null>>({})
 
   const selectedVolume: Volume | null = volumes.find((v) => v.id === currentVolumeId) ?? null
+
+  // Jump to a specific beat entry (from a beat button elsewhere): scroll the whole
+  // entry to the top of the editor and put the cursor at the start of its body.
+  useEffect(() => {
+    const fb = focusBeat
+    if (!fb) return
+    if (!currentNode || currentNode.id !== fb.nodeId) return
+    const section = beatSectionRefs.current[fb.beatId]
+    const el = beatBodyRefs.current[fb.beatId]
+    if (!section || !el) return
+    section.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    el.focus({ preventScroll: true })
+    el.setSelectionRange(0, 0)
+  }, [focusBeat, currentNode])
 
   function scheduleSave(patch: { title?: string; beats?: Beat[] }) {
     pendingRef.current = { ...pendingRef.current, ...patch }
@@ -209,13 +260,13 @@ export function EditorPane() {
         <div className="text-gray-400 text-sm text-center py-10">暂无梗概条目，点击下方「＋ 添加条目」</div>
       )}
       {beats.map((b, i) => (
-        <section key={b.id} className="mb-7">
-          <div className="mb-1.5 flex items-center gap-2">
-            <input
+        <section key={b.id} className="mb-7" ref={(el) => { beatSectionRefs.current[b.id] = el }}>
+          <div className="mb-1.5 flex items-start gap-2">
+            <AutoGrowTextarea
               value={b.text}
-              onChange={(e) => onBeatChange(i, { text: e.target.value })}
+              onChange={(v) => onBeatChange(i, { text: v })}
               placeholder={`梗概 ${i + 1}（不导出）`}
-              className="flex-1 text-[0.95em] font-semibold bg-transparent border-b border-gray-200 dark:border-gray-700 focus:border-blue-400 focus:outline-none pb-1 italic opacity-70 text-gray-600 dark:text-gray-300"
+              className="flex-1 resize-none overflow-hidden text-[0.95em] font-semibold bg-transparent border-b border-gray-200 dark:border-gray-700 focus:border-blue-400 focus:outline-none pb-1 italic opacity-70 text-gray-600 dark:text-gray-300"
             />
             <button onClick={() => removeBeat(i)} className="text-gray-300 hover:text-red-500 text-sm shrink-0" title="删除条目">
               ✕
@@ -229,6 +280,9 @@ export function EditorPane() {
             fontSize={previewFontSize}
             textColor={textColor}
             placeholder="在这里写正文，换行即分段…"
+            textareaRef={(el) => {
+              beatBodyRefs.current[b.id] = el
+            }}
           />
         </section>
       ))}

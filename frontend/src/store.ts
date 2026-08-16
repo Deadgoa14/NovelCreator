@@ -35,6 +35,7 @@ interface AppState {
   currentNodeId: string | null
   currentNode: CurrentNode | null
   currentVolumeId: string | null
+  focusBeat: { nodeId: string; beatId: string; nonce: number } | null
   ready: boolean
 
   setProject: (data: ProjectData, path: string) => void
@@ -42,6 +43,7 @@ interface AppState {
   setCurrentNodeId: (id: string | null) => void
   setCurrentVolumeId: (id: string | null) => void
   setCurrentNode: (n: CurrentNode | null) => void
+  requestFocusBeat: (nodeId: string, beatId: string) => void
   patchCurrentNode: (patch: Partial<CurrentNode>) => void
   patchConcepts: (concepts: Concept[], relations: Relation[]) => void
   patchStorylines: (storylines: Storyline[]) => void
@@ -67,6 +69,7 @@ export const useStore = create<AppState>((set) => ({
   currentNodeId: null,
   currentNode: null,
   currentVolumeId: null,
+  focusBeat: null,
   ready: false,
 
   setProject: (data, path) =>
@@ -89,6 +92,7 @@ export const useStore = create<AppState>((set) => ({
   setCurrentNodeId: (id) => set({ currentNodeId: id }),
   setCurrentVolumeId: (id) => set({ currentVolumeId: id }),
   setCurrentNode: (n) => set({ currentNode: n }),
+  requestFocusBeat: (nodeId, beatId) => set({ focusBeat: { nodeId, beatId, nonce: Math.random() } }),
   patchCurrentNode: (patch) => set((s) => (s.currentNode ? { currentNode: { ...s.currentNode, ...patch } } : {})),
   patchConcepts: (concepts, relations) => set({ concepts, relations }),
   patchStorylines: (storylines) => set({ storylines }),

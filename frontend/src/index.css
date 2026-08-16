@@ -14,3 +14,35 @@ body {
 html.dark body {
   background-color: #111827;
 }
+
+/* Flowing gradient border for the active storyline button. */
+@property --flow-angle {
+  syntax: '<angle>';
+  initial-value: 0deg;
+  inherits: false;
+}
+
+@keyframes flow-rotate {
+  to {
+    --flow-angle: 360deg;
+  }
+}
+
+.flowing-border {
+  position: relative;
+}
+
+.flowing-border::before {
+  content: '';
+  position: absolute;
+  inset: -2px;
+  border-radius: inherit;
+  padding: 2px;
+  background: conic-gradient(from var(--flow-angle), #60a5fa, #a78bfa, #f472b6, #34d399, #60a5fa);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  animation: flow-rotate 2.5s linear infinite;
+  pointer-events: none;
+}
