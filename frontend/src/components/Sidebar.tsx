@@ -10,7 +10,7 @@ const TABS: { id: Page; label: string; icon: string }[] = [
   { id: 'characters', label: '人物', icon: '👤' },
   { id: 'relations', label: '人物关系', icon: '🕸️' },
   { id: 'export', label: '导出', icon: '📤' },
-  { id: 'ai', label: 'AI 设置', icon: '🤖' },
+  { id: 'ai', label: 'AI API 配置', icon: '🤖' },
   { id: 'settings', label: '设置', icon: '⚙️' },
 ]
 

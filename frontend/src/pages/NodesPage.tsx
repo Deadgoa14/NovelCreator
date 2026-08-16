@@ -22,7 +22,7 @@ export function NodesPage() {
   const patchVolumes = useStore((s) => s.patchVolumes)
   const patchCurrentNode = useStore((s) => s.patchCurrentNode)
   const chapterNumberingPerVolume = useSettings((s) => s.chapterNumberingPerVolume)
-  const [showChapterNumber, setShowChapterNumber] = useState(false)
+  const showChapterNumber = useSettings((s) => s.showChapterNumber)
   const [aiBusy, setAiBusy] = useState(false)
   const { confirm, alert } = useDialog()
 
@@ -124,6 +124,21 @@ export function NodesPage() {
     if (currentVolumeId === id) setCurrentVolumeId(null)
   }
 
+  async function deleteBeat(nodeId: string, beatId: string) {
+    if (!(await confirm('删除该梗概条目？其正文不可恢复。'))) return
+    try {
+      const n = await api.getNode(nodeId)
+      const next = (n.meta.beats ?? []).filter((b) => b.id !== beatId)
+      await api.updateNode(nodeId, { beats: next })
+      patchNodes(await api.listNodes())
+      if (useStore.getState().currentNodeId === nodeId) {
+        patchCurrentNode({ beats: next })
+      }
+    } catch (e) {
+      await alert('删除失败：' + errorMessage(e))
+    }
+  }
+
   async function moveItem(index: number, dir: -1 | 1) {
     const target = index + dir
     if (target < 0 || target >= items.length) return
@@ -138,19 +153,8 @@ export function NodesPage() {
   return (
     <div className="h-full flex flex-col bg-gray-50 dark:bg-gray-900">
       <div className="p-3 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 flex items-center justify-between">
-        <h2 className="text-sm font-semibold text-gray-700 dark:text-gray-200">剧情节点 / 卷</h2>
+        <h2 className="text-sm font-semibold text-gray-700 dark:text-gray-200">章节目录 / 卷</h2>
         <div className="flex gap-2">
-          <button
-            onClick={() => setShowChapterNumber((v) => !v)}
-            title={showChapterNumber ? '切换为显示 order' : '切换为显示章节数'}
-            className={`px-3 py-1.5 text-xs rounded-md border ${
-              showChapterNumber
-                ? 'bg-blue-600 text-white border-blue-700 hover:bg-blue-700'
-                : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-100 dark:bg-gray-700 dark:text-gray-200 dark:border-gray-600'
-            }`}
-          >
-            {showChapterNumber ? '章节数' : 'order'}
-          </button>
           <button
             onClick={createNode}
             className="px-3 py-1.5 text-xs bg-blue-600 text-white rounded-md hover:bg-blue-700"
@@ -244,20 +248,34 @@ export function NodesPage() {
                 {it.beats.length > 0 && (
                   <div className="pl-10 pr-3 pb-2.5 space-y-1">
                     {it.beats.map((b, bi) => (
-                      <button
+                      <div
                         key={b.id}
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          setCurrentNodeId(it.id)
-                          setCurrentVolumeId(null)
-                          requestFocusBeat(it.id, b.id)
-                        }}
-                        className="w-full text-left text-xs px-2 py-1 rounded bg-gray-100 dark:bg-gray-800 hover:bg-blue-50 dark:hover:bg-blue-900/30 text-gray-600 dark:text-gray-300"
-                        title={b.text || `梗概 ${bi + 1}`}
+                        className="group/beat flex items-center gap-1 rounded bg-gray-100 dark:bg-gray-800 hover:bg-blue-50 dark:hover:bg-blue-900/30"
                       >
-                        <span className="text-gray-400 dark:text-gray-500 mr-1.5">{bi + 1}.</span>
-                        <span className="break-words">{b.text || '（空）'}</span>
-                      </button>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            setCurrentNodeId(it.id)
+                            setCurrentVolumeId(null)
+                            requestFocusBeat(it.id, b.id)
+                          }}
+                          className="flex-1 text-left text-xs px-2 py-1 text-gray-600 dark:text-gray-300"
+                          title={b.text || `梗概 ${bi + 1}`}
+                        >
+                          <span className="text-gray-400 dark:text-gray-500 mr-1.5">{bi + 1}.</span>
+                          <span className="break-words">{b.text || '（空）'}</span>
+                        </button>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            deleteBeat(it.id, b.id)
+                          }}
+                          className="opacity-0 group-hover/beat:opacity-100 text-gray-400 hover:text-red-500 text-xs px-1.5 shrink-0"
+                          title="删除梗概"
+                        >
+                          ✕
+                        </button>
+                      </div>
                     ))}
                   </div>
                 )}

@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import type { EditorView } from '@codemirror/view'
 import { api } from '../api'
@@ -33,6 +33,7 @@ export function EditorPane() {
   const beatTextRefs = useRef<Record<string, EditorView | null>>({})
   const beatSectionRefs = useRef<Record<string, HTMLElement | null>>({})
   const lastFocusNonce = useRef<number | null>(null)
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
 
   const selectedVolume: Volume | null = volumes.find((v) => v.id === currentVolumeId) ?? null
 
@@ -53,6 +54,11 @@ export function EditorPane() {
     const len = view.state.doc.length
     view.dispatch({ selection: { anchor: len } })
   }, [focusBeat, currentNode])
+
+  // Reset the fold state when switching nodes.
+  useEffect(() => {
+    setCollapsed(new Set())
+  }, [currentNodeId])
 
   function scheduleSave(patch: { title?: string; beats?: Beat[] }) {
     pendingRef.current = { ...pendingRef.current, ...patch }
@@ -105,6 +111,22 @@ export function EditorPane() {
     scheduleSave({ beats: next })
   }
 
+  function toggleBeat(id: string) {
+    setCollapsed((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  function toggleAllBeats() {
+    const beats = currentNode?.beats ?? []
+    if (!beats.length) return
+    const allCollapsed = beats.every((b) => collapsed.has(b.id))
+    setCollapsed(allCollapsed ? new Set() : new Set(beats.map((b) => b.id)))
+  }
+
   // ----- AI helpers -----
   function nodeBodyText() {
     return (currentNode?.beats ?? []).map((b) => (b.text || '') + '\n' + (b.body || '')).join('\n')
@@ -118,11 +140,14 @@ export function EditorPane() {
     )
   }
 
-  const shell = (header: ReactNode, body: ReactNode) => (
+  const shell = (header: ReactNode, body: ReactNode, headerAction?: ReactNode) => (
     <div className="h-full flex flex-col bg-gray-50 dark:bg-gray-900">
       <div className="px-4 py-2 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 flex items-center justify-between">
         <div className="text-sm font-medium text-gray-700 dark:text-gray-200 truncate">{header}</div>
-        <span className="text-xs text-gray-400 shrink-0">编辑</span>
+        <div className="flex items-center gap-2 shrink-0">
+          {headerAction}
+          <span className="text-xs text-gray-400">编辑</span>
+        </div>
       </div>
 
       <div className="flex-1 overflow-y-auto" style={{ background: previewMarginBg }}>
@@ -211,57 +236,71 @@ export function EditorPane() {
       {beats.length === 0 && (
         <div className="text-gray-400 text-sm text-center py-10">暂无梗概条目，点击下方「＋ 添加条目」</div>
       )}
-      {beats.map((b, i) => (
-        <section key={b.id} className="mb-7" ref={(el) => { beatSectionRefs.current[b.id] = el }}>
-          <div className="mb-1.5 flex items-start gap-2">
-            <CodeBodyEditor
-              value={b.text}
-              onChange={(v) => onBeatChange(i, { text: v })}
-              concepts={concepts}
-              fontFamily={previewFontFamily}
-              fontSize="0.95em"
-              textColor={summaryColor}
-              placeholder={`梗概 ${i + 1}（不导出）`}
-              className="flex-1 italic opacity-70 font-semibold border-b border-gray-200 dark:border-gray-700 pb-1"
-              onReady={(view) => {
-                beatTextRefs.current[b.id] = view
-              }}
-            />
-            <button onClick={() => removeBeat(i)} className="text-gray-300 hover:text-red-500 text-sm shrink-0" title="删除条目">
-              ✕
-            </button>
-          </div>
-          <CodeBodyEditor
-            value={b.body ?? ''}
-            onChange={(v) => onBeatChange(i, { body: v })}
-            concepts={concepts}
-            fontFamily={previewFontFamily}
-            fontSize={previewFontSize}
-            textColor={textColor}
-            placeholder="在这里写正文，换行即分段…"
-          />
-          <div className="mt-1 flex items-center justify-end gap-3">
-            <button
-              onClick={() => launchContinue(currentNodeId ?? '', i)}
-              className="text-xs text-gray-400 hover:text-blue-600"
-            >
-              ✨ 续写
-            </button>
-            <button
-              onClick={() => launchPolish(currentNodeId ?? '', i, b.body ?? '')}
-              className="text-xs text-gray-400 hover:text-blue-600"
-            >
-              💡 润色
-            </button>
-            <button
-              onClick={() => launchProofread(currentNodeId ?? '', i, b.body ?? '')}
-              className="text-xs text-gray-400 hover:text-blue-600"
-            >
-              🔍 审校
-            </button>
-          </div>
-        </section>
-      ))}
+      {beats.map((b, i) => {
+        const isCollapsed = collapsed.has(b.id)
+        return (
+          <section key={b.id} className="mb-7" ref={(el) => { beatSectionRefs.current[b.id] = el }}>
+            <div className="mb-1.5 flex items-start gap-2">
+              <button
+                onClick={() => toggleBeat(b.id)}
+                className="text-gray-400 hover:text-blue-600 text-base leading-none mt-1 shrink-0 select-none"
+                title={isCollapsed ? '展开正文' : '折叠正文'}
+              >
+                {isCollapsed ? '▸' : '▾'}
+              </button>
+              <CodeBodyEditor
+                value={b.text}
+                onChange={(v) => onBeatChange(i, { text: v })}
+                concepts={concepts}
+                fontFamily={previewFontFamily}
+                fontSize={previewFontSize + 5}
+                textColor={summaryColor}
+                placeholder={`梗概 ${i + 1}（不导出）`}
+                className="flex-1 italic opacity-70 font-semibold border-b border-gray-200 dark:border-gray-700 pb-1"
+                onReady={(view) => {
+                  beatTextRefs.current[b.id] = view
+                }}
+              />
+              <button onClick={() => removeBeat(i)} className="text-gray-300 hover:text-red-500 text-sm shrink-0" title="删除条目">
+                ✕
+              </button>
+            </div>
+            {!isCollapsed && (
+              <>
+                <CodeBodyEditor
+                  value={b.body ?? ''}
+                  onChange={(v) => onBeatChange(i, { body: v })}
+                  concepts={concepts}
+                  fontFamily={previewFontFamily}
+                  fontSize={previewFontSize}
+                  textColor={textColor}
+                  placeholder="在这里写正文，换行即分段…"
+                />
+                <div className="mt-1 flex items-center justify-end gap-3">
+                  <button
+                    onClick={() => launchContinue(currentNodeId ?? '', i)}
+                    className="text-xs text-gray-400 hover:text-blue-600"
+                  >
+                    ✨ 续写
+                  </button>
+                  <button
+                    onClick={() => launchPolish(currentNodeId ?? '', i, b.body ?? '')}
+                    className="text-xs text-gray-400 hover:text-blue-600"
+                  >
+                    💡 润色
+                  </button>
+                  <button
+                    onClick={() => launchProofread(currentNodeId ?? '', i, b.body ?? '')}
+                    className="text-xs text-gray-400 hover:text-blue-600"
+                  >
+                    🔍 审校
+                  </button>
+                </div>
+              </>
+            )}
+          </section>
+        )
+      })}
       <button
         onClick={addBeat}
         className="w-full py-2 rounded-md border border-dashed border-gray-300 dark:border-gray-600 text-sm text-gray-500 dark:text-gray-400 hover:text-blue-600 hover:border-blue-400 transition-colors"
@@ -270,5 +309,13 @@ export function EditorPane() {
       </button>
     </>
   )
-  return shell(<span title={currentNode!.title}>{currentNode!.title || '未命名节点'}</span>, body)
+  const foldAction = beats.length > 0 ? (
+    <button
+      onClick={toggleAllBeats}
+      className="px-2.5 py-1 text-xs rounded-md border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 whitespace-nowrap"
+    >
+      {beats.every((b) => collapsed.has(b.id)) ? '全部展开' : '全部折叠'}
+    </button>
+  ) : null
+  return shell(<span title={currentNode!.title}>{currentNode!.title || '未命名节点'}</span>, body, foldAction)
 }

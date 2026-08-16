@@ -7,6 +7,7 @@ DashScope-compatible, Kimi, custom, ...).
 """
 import json
 import os
+import re
 from pathlib import Path
 
 import httpx
@@ -150,6 +151,11 @@ def _unwrap_list(data):
     return data
 
 
+def _strip_trailing_commas(s):
+    """Remove commas immediately before a closing bracket/brace — a common LLM slip."""
+    return re.sub(r",(\s*[}\]])", r"\1", s)
+
+
 def _extract_json(text, unwrap=True):
     """Tolerantly pull a JSON array/object out of a model's free-form reply.
 
@@ -174,17 +180,27 @@ def _extract_json(text, unwrap=True):
     def maybe_unwrap(data):
         return _unwrap_list(data) if unwrap else data
 
-    # Whole text first, then bracket extraction (array, then object).
+    # Whole text first, then bracket extraction (array, then object). Each parse
+    # is also retried with trailing commas stripped (a common LLM mistake).
     try:
         return maybe_unwrap(json.loads(s))
+    except ValueError:
+        pass
+    try:
+        return maybe_unwrap(json.loads(_strip_trailing_commas(s)))
     except ValueError:
         pass
     for open_c, close_c in (("[", "]"), ("{", "}")):
         start = s.find(open_c)
         end = s.rfind(close_c)
         if start != -1 and end > start:
+            candidate = s[start : end + 1]
             try:
-                return maybe_unwrap(json.loads(s[start : end + 1]))
+                return maybe_unwrap(json.loads(candidate))
+            except ValueError:
+                pass
+            try:
+                return maybe_unwrap(json.loads(_strip_trailing_commas(candidate)))
             except ValueError:
                 pass
     raise ps.ProjectError("AI 返回中没有可解析的 JSON，请重试")
@@ -325,7 +341,7 @@ def analyze_raw(text):
                 "worldbuilding（世界观/设定，数组，每项 {\"name\": 名称, \"description\": 说明}）\n"
                 "characters（人物，数组，每项 {\"name\", \"aliases\": 字符串数组, \"identity\", \"personality\", \"background\", \"description\"}）\n"
                 "concepts（地点/物品/其他概念，数组，每项 {\"name\", \"aliases\": 字符串数组, \"type\": place|item|generic, \"description\"}）\n"
-                "beats（剧情，数组，每项 {\"text\": 一句话梗概, \"body\": 对应原文段落}，body 尽量从原文截取、不改写）\n"
+                "beats（剧情，数组，每项 {\"text\": 一句话梗概}，不要复制原文、不要写 body 字段）\n"
                 "只输出纯 JSON，不要代码块、不要任何解释文字。\n\n生文本：\n" + text
             ),
         },

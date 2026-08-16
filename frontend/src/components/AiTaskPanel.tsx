@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from 'react'
 import { applyTextTask, importExtract, importSummarize, useAiTasks } from '../aiTasks'
 import type { AiTask } from '../aiTasks'
 import { errorMessage } from '../api'
+import { ProgressBar } from './ProgressBar'
+import { DiffView } from './DiffView'
 
 const APPLY_LABEL: Record<string, string> = {
   continue: '追加到正文',
@@ -15,6 +17,7 @@ function TaskCard({ task, onRemove }: { task: AiTask; onRemove: () => void }) {
   const patch = useAiTasks((s) => s.patch)
   const [selected, setSelected] = useState<Set<number>>(new Set())
   const [busy, setBusy] = useState(false)
+  const [showDiff, setShowDiff] = useState(false)
   const taRef = useRef<HTMLTextAreaElement | null>(null)
 
   useEffect(() => {
@@ -79,6 +82,8 @@ function TaskCard({ task, onRemove }: { task: AiTask; onRemove: () => void }) {
         </button>
       </div>
 
+      {task.status === 'running' && <ProgressBar className="mb-1.5" />}
+
       {task.error && <div className="text-xs text-red-500 mb-1 whitespace-pre-wrap">{task.error}</div>}
 
       {isList ? (
@@ -127,13 +132,30 @@ function TaskCard({ task, onRemove }: { task: AiTask; onRemove: () => void }) {
             className="w-full text-xs border border-gray-200 dark:border-gray-600 rounded-md p-2 bg-gray-50 dark:bg-gray-900 text-gray-800 dark:text-gray-200 resize-y focus:outline-none"
           />
           {task.status === 'done' && task.text.trim() && (
-            <button
-              onClick={apply}
-              disabled={busy}
-              className="mt-1.5 px-2.5 py-1 text-xs bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-40"
-            >
-              {APPLY_LABEL[task.kind] ?? '应用'}
-            </button>
+            <div className="mt-1.5 flex items-center gap-2">
+              <button
+                onClick={apply}
+                disabled={busy}
+                className="px-2.5 py-1 text-xs bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-40"
+              >
+                {APPLY_LABEL[task.kind] ?? '应用'}
+              </button>
+              {task.kind === 'polish' && task.original != null && (
+                <button
+                  onClick={() => setShowDiff((v) => !v)}
+                  className={`px-2.5 py-1 text-xs rounded border ${
+                    showDiff
+                      ? 'border-blue-400 text-blue-600 dark:text-blue-400'
+                      : 'border-gray-300 text-gray-600 hover:border-blue-400 hover:text-blue-600 dark:border-gray-600 dark:text-gray-300 dark:hover:text-blue-400'
+                  }`}
+                >
+                  {showDiff ? '收起对比' : '对比'}
+                </button>
+              )}
+            </div>
+          )}
+          {task.kind === 'polish' && showDiff && task.original != null && (
+            <DiffView oldText={task.original} newText={task.text} />
           )}
         </>
       )}

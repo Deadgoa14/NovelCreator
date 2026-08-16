@@ -91,12 +91,20 @@ export function SettingsPage() {
           </Row>
         </Section>
 
-        <Section title="剧情节点">
+        <Section title="章节目录">
           <Row label="每一卷章节数从头开始计数">
             <input
               type="checkbox"
               checked={s.chapterNumberingPerVolume}
               onChange={(e) => s.set({ chapterNumberingPerVolume: e.target.checked })}
+              className="h-4 w-4 rounded border-gray-300"
+            />
+          </Row>
+          <Row label="显示章节数（而非 order）">
+            <input
+              type="checkbox"
+              checked={s.showChapterNumber}
+              onChange={(e) => s.set({ showChapterNumber: e.target.checked })}
               className="h-4 w-4 rounded border-gray-300"
             />
           </Row>

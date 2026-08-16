@@ -19,6 +19,7 @@ export interface AiTask {
   beatIndex?: number
   status: 'running' | 'done' | 'error'
   text: string
+  original?: string
   candidates?: AiConceptCandidate[]
   items?: AiSummarizeItem[]
   error?: string
@@ -118,7 +119,7 @@ export function launchContinue(nodeId: string, beatIndex: number) {
 }
 
 export function launchPolish(nodeId: string, beatIndex: number, body: string) {
-  const id = spawn('polish', '润色', { nodeId, beatIndex })
+  const id = spawn('polish', '润色', { nodeId, beatIndex, original: body })
   void runStream(
     id,
     (on) => api.streamPolish(body, on),

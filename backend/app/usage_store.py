@@ -15,6 +15,9 @@ PRICING = {
     "qwen-turbo": (0.3, 0.6),
     "moonshot-v1-8k": (12.0, 12.0),
     "glm-4-flash": (0.0, 0.0),
+    # Rough estimates (人民币 / 1M tokens), subject to change.
+    "gpt-4o": (18.0, 72.0),
+    "claude-opus-4-5": (108.0, 540.0),
 }
 DEFAULT_PRICE = (2.0, 8.0)
 
@@ -88,7 +91,7 @@ def reset():
 
 
 def snapshot():
-    """Return a frontend-friendly summary (totals + byModel + last 14 days)."""
+    """Return a frontend-friendly summary (totals + byModel + last 30 days)."""
     data = load()
     by_model = [
         {"model": model, **stats}
@@ -97,7 +100,7 @@ def snapshot():
     daily = [
         {"date": date, **stats}
         for date, stats in sorted(data["daily"].items())
-    ][-14:]
+    ][-30:]
     return {
         "totalRequests": data["totalRequests"],
         "totalInput": data["totalInput"],

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
+import { Bar, BarChart, CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { api, errorMessage } from '../api'
 import type { AiConfig, AiUsage } from '../api'
 import { useDialog } from '../components/Dialog'
@@ -10,12 +10,30 @@ const inputCls =
 const AI_PROVIDERS = [
   { label: 'DeepSeek', baseURL: 'https://api.deepseek.com', model: 'deepseek-chat' },
   { label: 'DeepSeek（Anthropic 兼容）', baseURL: 'https://api.deepseek.com/anthropic', model: 'deepseek-chat' },
+  { label: 'OpenAI（ChatGPT）', baseURL: 'https://api.openai.com/v1', model: 'gpt-4o' },
+  { label: 'Anthropic（Claude）', baseURL: 'https://api.anthropic.com', model: 'claude-opus-4-5' },
   { label: '通义千问', baseURL: 'https://dashscope.aliyuncs.com/compatible-mode/v1', model: 'qwen-plus' },
   { label: 'Kimi', baseURL: 'https://api.moonshot.cn/v1', model: 'moonshot-v1-8k' },
   { label: '智谱 GLM', baseURL: 'https://open.bigmodel.cn/api/paas/v4', model: 'glm-4-flash' },
   { label: 'Ollama（本地）', baseURL: 'http://localhost:11434/v1', model: '' },
   { label: '自定义', baseURL: '', model: '' },
 ]
+
+function fmtLocal(d: Date): string {
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}
+
+function inUsageRange(dateStr: string, range: 'today' | 'yesterday' | 'week' | 'month'): boolean {
+  const today = new Date()
+  if (range === 'today') return dateStr === fmtLocal(today)
+  if (range === 'yesterday') return dateStr === fmtLocal(new Date(today.getTime() - 86400000))
+  const days = range === 'week' ? 7 : 30
+  const cutoff = new Date(today.getTime() - (days - 1) * 86400000)
+  return dateStr >= fmtLocal(cutoff) && dateStr <= fmtLocal(today)
+}
 
 function Row({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -52,6 +70,8 @@ export function AiSettingsPage() {
   const [showKey, setShowKey] = useState(false)
   const [savingAi, setSavingAi] = useState(false)
   const [usage, setUsage] = useState<AiUsage | null>(null)
+  const [range, setRange] = useState<'today' | 'yesterday' | 'week' | 'month'>('week')
+  const [chartType, setChartType] = useState<'bar' | 'line'>('bar')
 
   useEffect(() => {
     api.getAiConfig().then(setAi).catch(() => {})
@@ -106,16 +126,18 @@ export function AiSettingsPage() {
   }
 
   const activePreset = AI_PROVIDERS.findIndex((p) => p.baseURL === ai.baseURL)
-  const chartData = (usage?.daily ?? []).map((d) => ({
-    date: d.date.slice(5),
-    input: d.input,
-    output: d.output,
-  }))
+  const chartData = (usage?.daily ?? [])
+    .filter((d) => inUsageRange(d.date, range))
+    .map((d) => ({
+      date: d.date.slice(5),
+      input: d.input,
+      output: d.output,
+    }))
 
   return (
     <div className="h-full flex flex-col bg-gray-50 dark:bg-gray-900">
       <div className="p-3 border-b border-gray-200 bg-white dark:bg-gray-800 dark:border-gray-700">
-        <h2 className="text-sm font-semibold text-gray-700 dark:text-gray-200">AI 设置</h2>
+        <h2 className="text-sm font-semibold text-gray-700 dark:text-gray-200">AI API 配置</h2>
         <p className="text-[11px] text-gray-400 mt-0.5">API Key 保存在本机后端，不会上传、不会进 Git。</p>
       </div>
 
@@ -203,20 +225,82 @@ export function AiSettingsPage() {
               <StatCard label="预计费用" value={`¥ ${(usage?.totalCost ?? 0).toFixed(2)}`} accent="text-amber-600" />
             </div>
 
-            <div className="mt-4 h-[240px]">
+            <div className="mt-4 flex items-center justify-between">
+              <div className="flex gap-1">
+                {(
+                  [
+                    ['today', '今天'],
+                    ['yesterday', '昨天'],
+                    ['week', '近一周'],
+                    ['month', '近一个月'],
+                  ] as const
+                ).map(([id, label]) => (
+                  <button
+                    key={id}
+                    onClick={() => setRange(id)}
+                    className={`px-2.5 py-1 text-xs rounded-md ${
+                      range === id
+                        ? 'bg-blue-600 text-white'
+                        : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+              <div className="flex gap-1">
+                <button
+                  onClick={() => setChartType('bar')}
+                  className={`px-2.5 py-1 text-xs rounded-md ${
+                    chartType === 'bar'
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
+                  }`}
+                >
+                  柱状
+                </button>
+                <button
+                  onClick={() => setChartType('line')}
+                  className={`px-2.5 py-1 text-xs rounded-md ${
+                    chartType === 'line'
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
+                  }`}
+                >
+                  折线
+                </button>
+              </div>
+            </div>
+
+            <div className="mt-2 h-[240px]">
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={chartData} margin={{ top: 8, right: 8, left: -12, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-                  <XAxis dataKey="date" tick={{ fontSize: 11 }} />
-                  <YAxis tick={{ fontSize: 11 }} />
-                  <Tooltip
-                    contentStyle={{ fontSize: 12, borderRadius: 8 }}
-                    formatter={(value: number, name: string) => [value.toLocaleString(), name === 'input' ? '输入' : '输出']}
-                  />
-                  <Legend wrapperStyle={{ fontSize: 12 }} />
-                  <Bar dataKey="input" name="输入" stackId="a" fill="#3b82f6" />
-                  <Bar dataKey="output" name="输出" stackId="a" fill="#10b981" />
-                </BarChart>
+                {chartType === 'bar' ? (
+                  <BarChart data={chartData} margin={{ top: 8, right: 8, left: -12, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                    <XAxis dataKey="date" tick={{ fontSize: 11 }} />
+                    <YAxis tick={{ fontSize: 11 }} />
+                    <Tooltip
+                      contentStyle={{ fontSize: 12, borderRadius: 8 }}
+                      formatter={(value: number, name: string) => [value.toLocaleString(), name === 'input' ? '输入' : '输出']}
+                    />
+                    <Legend wrapperStyle={{ fontSize: 12 }} />
+                    <Bar dataKey="input" name="输入" stackId="a" fill="#3b82f6" />
+                    <Bar dataKey="output" name="输出" stackId="a" fill="#10b981" />
+                  </BarChart>
+                ) : (
+                  <LineChart data={chartData} margin={{ top: 8, right: 8, left: -12, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                    <XAxis dataKey="date" tick={{ fontSize: 11 }} />
+                    <YAxis tick={{ fontSize: 11 }} />
+                    <Tooltip
+                      contentStyle={{ fontSize: 12, borderRadius: 8 }}
+                      formatter={(value: number, name: string) => [value.toLocaleString(), name === 'input' ? '输入' : '输出']}
+                    />
+                    <Legend wrapperStyle={{ fontSize: 12 }} />
+                    <Line type="monotone" dataKey="input" name="输入" stroke="#3b82f6" strokeWidth={2} dot={false} />
+                    <Line type="monotone" dataKey="output" name="输出" stroke="#10b981" strokeWidth={2} dot={false} />
+                  </LineChart>
+                )}
               </ResponsiveContainer>
             </div>
 
