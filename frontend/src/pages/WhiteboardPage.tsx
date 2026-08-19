@@ -159,11 +159,25 @@ function StartNode({ data }: NodeProps<FlowNode>) {
   )
 }
 
-function VolTerminalNode({ data }: NodeProps<FlowNode>) {
+function VolStartNode({ data }: NodeProps<FlowNode>) {
   const direction = useSettings((s) => s.whiteboardDirection)
   return (
     <div className="relative">
       <Handle type="target" position={DIRECTION_TARGET[direction]} />
+      <div
+        className="px-3 py-1.5 rounded-full text-[11px] font-medium text-white whitespace-nowrap shadow-sm border-2 border-dashed border-amber-300"
+        style={{ background: data.color }}
+      >
+        {data.label}
+      </div>
+    </div>
+  )
+}
+
+function VolEndNode({ data }: NodeProps<FlowNode>) {
+  const direction = useSettings((s) => s.whiteboardDirection)
+  return (
+    <div className="relative">
       <div
         className="px-3 py-1.5 rounded-full text-[11px] font-medium text-white whitespace-nowrap shadow-sm border-2 border-dashed border-amber-300"
         style={{ background: data.color }}
@@ -219,7 +233,7 @@ function VolNode({ data, selected, id }: NodeProps<FlowNode>) {
   )
 }
 
-const nodeTypes = { plotNode: PlotNode, startNode: StartNode, volNode: VolNode, volStartNode: VolTerminalNode, volEndNode: VolTerminalNode }
+const nodeTypes = { plotNode: PlotNode, startNode: StartNode, volNode: VolNode, volStartNode: VolStartNode, volEndNode: VolEndNode }
 
 export function WhiteboardPage() {
   const nodes = useStore((s) => s.nodes)
@@ -577,16 +591,14 @@ export function WhiteboardPage() {
     const source = conn.source
     const target = conn.target
     if (!source || !target) return
-
-    if (isTerminal(source) || isTerminal(target)) {
-      const volId = volIdOf(isTerminal(source) ? source : target)
-      const chapterId = isTerminal(source) ? target : source
-      if (volId && chapterId && !isTerminal(chapterId) && !isVolumeRef(chapterId)) {
-        void archiveToVolume(chapterId, volId)
-      }
-      return
-    }
-    void addConnection(source, target)
+    // Volume terminals act like the volume's ports: start terminal = input (a node
+    // before the volume), end terminal = output (a node after the volume). Resolve
+    // them to the volume id so connecting to a volume is identical to connecting to
+    // a plot node. (Archiving a chapter INTO a volume is via the right-click menu.)
+    const src = source.endsWith(':end') ? source.slice(0, -4) : source
+    const tgt = target.endsWith(':start') ? target.slice(0, -6) : target
+    if (src === tgt) return
+    void addConnection(src, tgt)
   }
 
   async function quickGenerateOverallLine() {
@@ -750,7 +762,7 @@ export function WhiteboardPage() {
           </div>
         )}
         <div className="mt-1.5 text-[11px] text-gray-400">
-          从「出」拖到「入」建立「A 在 B 之前」约束；从线头拖到章节开始一条故事线；彩色流动=当前生效的执行链；右键连线可切换分支/断开。
+          从「出」拖到「入」建立「A 在 B 之前」约束；从线头拖到章节开始一条故事线；左键拖空白=框选多节点，按住空格拖=平移画布；右键连线可切换分支/断开。
         </div>
       </div>
 
@@ -782,6 +794,9 @@ export function WhiteboardPage() {
             setMenu({ kind: 'pane', x: e.clientX, y: e.clientY })
           }}
           onPaneClick={() => setMenu(null)}
+          selectionOnDrag
+          panOnDrag={false}
+          panActivationKeyCode="Space"
           fitView
         >
           <Background gap={20} />

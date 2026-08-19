@@ -18,14 +18,10 @@ if not exist "frontend\node_modules" (
   cd ..
 )
 
-if not exist "frontend\dist\index.html" (
-  echo [3/4] 首次运行，正在构建前端...
-  cd frontend
-  call npm run build
-  cd ..
-) else (
-  echo [3/4] 使用已构建的前端（跳过构建）
-)
+echo [3/4] 正在构建前端（开发者模式，每次重新构建）...
+cd frontend
+call npm run build
+cd ..
 
 echo [4/4] 正在启动服务，稍后浏览器会自动打开 http://127.0.0.1:8765 ...
 start "" cmd /c "timeout /t 2 >nul & start http://127.0.0.1:8765"

@@ -229,7 +229,7 @@ def _migrate_legacy():
         for c in old_conns:
             by_from.setdefault(c.get("from"), []).append(c.get("to"))
 
-        ps.write_json_file(ps.CONNECTIONS_FILE, {"connections": []})
+        write_json_file(CONNECTIONS_FILE, {"connections": []})
 
         for sl in slist:
             nodes = sl.get("nodes") or []
