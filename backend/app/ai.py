@@ -409,13 +409,18 @@ def analyze_raw(text):
     }
 
 
-def continue_messages(title, beats, concepts):
+def continue_messages(title, beats, concepts, notes=None):
     """Build the chat messages for continuing the last beat's body prose."""
     context = f"章节标题：{title or '（无）'}\n"
     if beats:
         context += "\n前面的梗概与正文：\n"
         for i, b in enumerate(beats, start=1):
             context += f"{i}. 梗概：{b.get('text') or ''}\n   正文：{(b.get('body') or '').strip()}\n"
+    if notes:
+        context += "\n写作要点（请在续写中重点体现）：\n"
+        for n in notes:
+            if str(n).strip():
+                context += f"- {str(n).strip()}\n"
     if concepts:
         names = "、".join(c.get("name", "") for c in concepts if c.get("name"))
         context += f"\n相关人物/概念：{names}\n"
@@ -431,9 +436,42 @@ def continue_messages(title, beats, concepts):
     ]
 
 
-def continue_body(title, beats, concepts):
+def continue_body(title, beats, concepts, notes=None):
     """Continue writing the body prose for the last beat of a node."""
-    return chat(continue_messages(title, beats, concepts), temperature=0.8, max_tokens=4096).strip()
+    return chat(continue_messages(title, beats, concepts, notes), temperature=0.8, max_tokens=4096).strip()
+
+
+def resolve_questions(title, beats, questions):
+    """Answer each unresolved plot/setting question for a node."""
+    questions = [q for q in (questions or []) if str(q).strip()]
+    if not questions:
+        return []
+    context = f"章节标题：{title or '（无）'}\n"
+    if beats:
+        context += "已有梗概（按顺序）：\n"
+        for i, b in enumerate(beats, start=1):
+            context += f"{i}. {(b.get('text') or '').strip()}\n"
+    qs = "\n".join(f"{i}. {q}" for i, q in enumerate(questions, start=1))
+    messages = [
+        {
+            "role": "system",
+            "content": (
+                "你是小说设定/剧情顾问。用户列出了几个尚未解决的剧情或设定问题（空缺、逻辑不通、动机不明）。"
+                "请针对每个问题给出一个合理的解决方案，补全空缺、理顺逻辑，保持与已有梗概一致。"
+            ),
+        },
+        {
+            "role": "user",
+            "content": (
+                context + "\n待解决的问题：\n" + qs
+                + "\n\n请严格按问题顺序返回一个 JSON 数组，每个元素是字符串（对应问题的解决方案），不要输出其他内容。"
+            ),
+        },
+    ]
+    data = _ask_json(messages, temperature=0.7, max_tokens=4096)
+    if not isinstance(data, list):
+        raise ps.ProjectError("AI 返回格式错误，请重试")
+    return [str(x).strip() if x is not None else "" for x in data]
 
 
 def next_beat(title, summaries):

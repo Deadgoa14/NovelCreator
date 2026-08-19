@@ -1,9 +1,28 @@
-import type { ReactNode } from 'react'
+import type { CSSProperties, ReactNode } from 'react'
 import type { Concept } from './types'
+import type { HighlightStyle } from './settings'
 
 export interface ConceptEntry {
   text: string
   concept: Concept
+}
+
+/** Pick the highlight mode for a concept: characters use one style, everything
+ * else (generic/place/item) uses the other. */
+export function modeFor(concept: Concept, characterStyle: HighlightStyle, conceptStyle: HighlightStyle): HighlightStyle {
+  return concept.type === 'character' ? characterStyle : conceptStyle
+}
+
+/** Turn a highlight mode + concept color into inline CSS. */
+export function styleCss(mode: HighlightStyle, color?: string): CSSProperties {
+  const s: CSSProperties = {}
+  if (!color || mode === 'none') return s
+  if (mode === 'color' || mode === 'both') s.color = color
+  if (mode === 'highlight' || mode === 'both') {
+    s.backgroundColor = color + '22'
+    s.borderRadius = 3
+  }
+  return s
 }
 
 function escapeRegExp(s: string): string {

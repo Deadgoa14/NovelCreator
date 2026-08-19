@@ -183,6 +183,11 @@ export function RelationsPage() {
   }
 
   function onNodeClick(_: unknown, node: Node) {
+    if (selectedId === node.id) {
+      setSelectedId(null)
+      setDraft(null)
+      return
+    }
     setSelectedId(node.id)
     const c = characters.find((x) => x.id === node.id)
     if (c) setDraft({ ...c })

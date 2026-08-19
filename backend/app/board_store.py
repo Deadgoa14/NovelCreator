@@ -58,6 +58,41 @@ def set_start_position(storyline_id, x, y):
     return {"ok": True}
 
 
+def set_volume_position(volume_id, x, y):
+    with _lock:
+        data = read_whiteboard()
+        data["items"] = _upsert(
+            data.get("items", []),
+            lambda it: it.get("type") == "volume" and it.get("volumeId") == volume_id,
+            {"type": "volume", "volumeId": volume_id, "position": {"x": x, "y": y}},
+        )
+        ps.write_json_file(ps.WHITEBOARD_FILE, data)
+    return {"ok": True}
+
+
+def set_volume_terminal_position(volume_id, terminal, x, y):
+    item_type = "volumeStart" if terminal == "start" else "volumeEnd"
+    with _lock:
+        data = read_whiteboard()
+        data["items"] = _upsert(
+            data.get("items", []),
+            lambda it: it.get("type") == item_type and it.get("volumeId") == volume_id,
+            {"type": item_type, "volumeId": volume_id, "position": {"x": x, "y": y}},
+        )
+        ps.write_json_file(ps.WHITEBOARD_FILE, data)
+    return {"ok": True}
+
+
+def remove_volume_position(volume_id):
+    with _lock:
+        data = read_whiteboard()
+        data["items"] = [
+            it for it in data.get("items", [])
+            if not (it.get("volumeId") == volume_id and it.get("type") in ("volume", "volumeStart", "volumeEnd"))
+        ]
+        ps.write_json_file(ps.WHITEBOARD_FILE, data)
+
+
 def set_character_position(concept_id, x, y):
     with _lock:
         data = read_relations_board()

@@ -2,6 +2,13 @@ export interface Beat {
   id: string
   text: string
   body?: string
+  notes?: string[]
+}
+
+export interface Question {
+  id: string
+  text: string
+  answer?: string
 }
 
 export interface Point {
@@ -21,6 +28,8 @@ export interface Concept {
   personality?: string
   background?: string
   identity?: string
+  category?: string
+  tags?: string[]
 }
 
 export interface Relation {
@@ -37,14 +46,17 @@ export interface StorylineEdge {
   active: boolean
 }
 
+export interface Connection {
+  id: string
+  from: string
+  to: string
+  active: boolean
+}
+
 export interface Storyline {
   id: string
   name: string
   color: string
-  nodes: string[]
-  type?: 'single' | 'branch'
-  edges?: StorylineEdge[]
-  start?: string | null
 }
 
 export interface Volume {
@@ -52,7 +64,7 @@ export interface Volume {
   name: string
   intro: string
   body: string
-  order: number
+  chapters: string[]
 }
 
 export interface NodeSummary {
@@ -73,6 +85,7 @@ export interface NodeDetail {
     order?: number
     beats: Beat[]
     characters: string[]
+    questions?: Question[]
   }
   body: string
 }
@@ -80,6 +93,9 @@ export interface NodeDetail {
 export type WhiteboardItem =
   | { type: 'node'; nodeId: string; position: Point }
   | { type: 'start'; storylineId: string; position: Point }
+  | { type: 'volume'; volumeId: string; position: Point }
+  | { type: 'volumeStart'; volumeId: string; position: Point }
+  | { type: 'volumeEnd'; volumeId: string; position: Point }
 
 export type RelationsBoardItem = { type: 'character'; conceptId: string; position: Point }
 
@@ -100,6 +116,7 @@ export interface ProjectData {
   concepts: { concepts: Concept[]; relations: Relation[] }
   storylines: { storylines: Storyline[] }
   volumes: Volume[]
+  connections: Connection[]
   whiteboard: { items: WhiteboardItem[] }
   relationsBoard: { items: RelationsBoardItem[] }
   nodes: NodeSummary[]

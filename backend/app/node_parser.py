@@ -17,15 +17,20 @@ def split_frontmatter(raw):
 
 
 def _normalize_beats(beats):
-    """Ensure each beat is a dict with id/text/body keys."""
+    """Ensure each beat is a dict with id/text/body/notes keys."""
     out = []
     for b in beats or []:
         if not isinstance(b, dict):
             continue
+        notes = b.get("notes")
+        if not isinstance(notes, list):
+            notes = []
+        notes = [str(n).strip() for n in notes if str(n).strip()]
         out.append({
             "id": b.get("id") or "",
             "text": b.get("text") or "",
             "body": b.get("body") or "",
+            "notes": notes,
         })
     return out
 
@@ -69,8 +74,25 @@ def parse_node(raw):
     meta.setdefault("title", "")
     meta.setdefault("beats", [])
     meta.setdefault("characters", [])
+    meta.setdefault("questions", [])
     meta["beats"] = _normalize_beats(meta.get("beats"))
+    meta["questions"] = _normalize_questions(meta.get("questions"))
     return meta, body
+
+
+def _normalize_questions(questions):
+    """Ensure questions is a list of {id, text, answer} dicts."""
+    out = []
+    for q in questions or []:
+        if isinstance(q, dict):
+            out.append({
+                "id": q.get("id") or "",
+                "text": q.get("text") or "",
+                "answer": q.get("answer") or "",
+            })
+        elif isinstance(q, str) and q.strip():
+            out.append({"id": "", "text": q.strip(), "answer": ""})
+    return out
 
 
 def serialize_node(meta, body):

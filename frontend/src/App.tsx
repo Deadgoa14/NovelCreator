@@ -15,6 +15,7 @@ import { ExportPage } from './pages/ExportPage'
 import { SettingsPage } from './pages/SettingsPage'
 import { AiSettingsPage } from './pages/AiSettingsPage'
 import { RawAnalysisPage } from './pages/RawAnalysisPage'
+import { MdImportPage } from './pages/MdImportPage'
 
 export default function App() {
   const ready = useStore((s) => s.ready)
@@ -39,7 +40,7 @@ export default function App() {
       .getNode(currentNodeId)
       .then((n) => {
         if (cancelled) return
-        setCurrentNode({ id: n.id, title: n.meta.title ?? '', beats: n.meta.beats ?? [] })
+        setCurrentNode({ id: n.id, title: n.meta.title ?? '', beats: n.meta.beats ?? [], questions: n.meta.questions ?? [] })
       })
       .catch(() => {})
     return () => {
@@ -68,6 +69,7 @@ export default function App() {
         <div className="flex-1 flex min-w-0">
           <div className="w-[58%] min-w-[360px] border-r border-gray-200 dark:border-gray-700 overflow-hidden flex flex-col">
             {activePage === 'raw' && <RawAnalysisPage />}
+            {activePage === 'mdimport' && <MdImportPage />}
             {activePage === 'ai' && <AiSettingsPage />}
             {activePage === 'nodes' && <NodesPage />}
             {activePage === 'whiteboard' && <WhiteboardPage />}

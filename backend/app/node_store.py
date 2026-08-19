@@ -54,10 +54,8 @@ def _max_order():
 
 
 def max_order():
-    """Largest order across both plot nodes and volumes (shared order space)."""
-    from . import volume_store
-
-    return max(_max_order(), volume_store._max_order())
+    """Largest order across plot nodes (volumes no longer share this space)."""
+    return _max_order()
 
 
 def list_nodes():
@@ -116,18 +114,13 @@ def set_order(node_id, order):
     _write_node(node_id, meta, body)
 
 
-def reorder_items(sequence):
-    """Renumber ``order`` 1..N for the given sequence of {type, id} items."""
-    from . import volume_store
-
+def reorder_nodes(ids):
+    """Renumber ``order`` 1..N for the given node-id sequence."""
     with _lock:
-        for i, item in enumerate(sequence, start=1):
-            if item.get("type") == "node":
-                set_order(item.get("id"), i)
-            elif item.get("type") == "volume":
-                volume_store.set_order(item.get("id"), i)
+        for i, node_id in enumerate(ids, start=1):
+            set_order(node_id, i)
     ps.touch_project()
-    return {"nodes": list_nodes(), "volumes": volume_store.list_volumes()}
+    return list_nodes()
 
 
 def _beats_text(beats):
@@ -177,6 +170,16 @@ def delete_node(node_id):
     with _lock:
         if os.path.exists(fp):
             os.remove(fp)
+    # Drop the deleted node from every volume's chapters too.
+    from . import volume_store
+
+    volume_store.remove_chapter_from_all(node_id)
+
+    # Drop wires touching the deleted node.
+    from . import connection_store
+
+    connection_store.remove_connections_touching(node_id)
+
     # Drop the deleted node from every storyline so no stale references remain.
     from . import storyline_store
 

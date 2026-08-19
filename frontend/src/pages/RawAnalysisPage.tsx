@@ -133,9 +133,16 @@ export function RawAnalysisPage() {
     if (raw.storylineId) {
       const sl = s.storylines.find((x) => x.id === raw.storylineId)
       if (sl) {
-        await api.updateStoryline(sl.id, { ...sl, nodes: [...sl.nodes, node.id] })
-        const r = await api.getStorylines()
-        s.patchStorylines(r.storylines)
+        const conns = (await api.getConnections()).connections
+        let tail: string = sl.id
+        const seen = new Set<string>()
+        while (tail && !seen.has(tail)) {
+          seen.add(tail)
+          const out = conns.find((c) => c.from === tail && c.active)
+          if (!out) break
+          tail = out.to
+        }
+        await api.createConnection(tail, node.id)
       }
     }
     s.patchNodes(await api.listNodes())

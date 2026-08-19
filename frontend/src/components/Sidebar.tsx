@@ -4,13 +4,14 @@ import { useDialog } from './Dialog'
 
 const TABS: { id: Page; label: string; icon: string }[] = [
   { id: 'raw', label: '生文本分析', icon: '🔬' },
+  { id: 'mdimport', label: '导入 Markdown', icon: '📥' },
   { id: 'nodes', label: '章节目录', icon: '📄' },
   { id: 'whiteboard', label: '故事线白板', icon: '🗺️' },
   { id: 'concepts', label: '概念', icon: '🏷️' },
   { id: 'characters', label: '人物', icon: '👤' },
   { id: 'relations', label: '人物关系', icon: '🕸️' },
   { id: 'export', label: '导出', icon: '📤' },
-  { id: 'ai', label: 'AI API 配置', icon: '🤖' },
+  { id: 'ai', label: 'AI模型配置', icon: '🤖' },
   { id: 'settings', label: '设置', icon: '⚙️' },
 ]
 

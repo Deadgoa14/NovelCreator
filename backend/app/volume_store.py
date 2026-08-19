@@ -1,4 +1,9 @@
-"""Volume (卷) storage: one JSON file per volume inside volumes/."""
+"""Volume (卷) storage: one JSON file per volume inside volumes/.
+
+A volume is an aggregate of plot nodes: ``chapters`` holds the ordered node-id
+list it contains. Volumes carry no ``order`` of their own — their position in
+the chapter list is derived from the order of their first chapter.
+"""
 import json
 import os
 import threading
@@ -38,27 +43,8 @@ def list_volumes():
             continue
         if isinstance(v, dict):
             result.append(v)
-    result.sort(key=lambda v: (v.get("order") if isinstance(v.get("order"), int) else 0, v.get("id", "")))
+    result.sort(key=lambda v: v.get("id", ""))
     return result
-
-
-def _max_order():
-    d = _dir()
-    m = 0
-    if not os.path.isdir(d):
-        return m
-    for fn in os.listdir(d):
-        if not fn.endswith(".json"):
-            continue
-        try:
-            with open(os.path.join(d, fn), encoding="utf-8") as f:
-                v = json.load(f)
-            o = v.get("order")
-            if isinstance(o, int) and o > m:
-                m = o
-        except Exception:
-            continue
-    return m
 
 
 def _find_file(volume_id):
@@ -86,7 +72,7 @@ def create_volume(name=""):
             "name": name or "未命名卷",
             "intro": "",
             "body": "",
-            "order": node_store.max_order() + 1,
+            "chapters": [],
         }
         _write_volume_file(volume)
     ps.touch_project()
@@ -124,16 +110,27 @@ def update_volume(volume_id, patch):
     return volume
 
 
-def set_order(volume_id, order):
+def set_chapters(volume_id, chapters):
+    """Replace a volume's ordered chapter list."""
+    chapters = [c for c in (chapters or []) if isinstance(c, str) and c]
     with _lock:
         fp = _find_file(volume_id)
         if not fp:
-            return
+            raise ps.ProjectError("卷不存在")
         with open(fp, encoding="utf-8") as f:
             volume = json.load(f)
-        volume["order"] = order
+        volume["chapters"] = chapters
         with open(fp, "w", encoding="utf-8") as f:
             json.dump(volume, f, ensure_ascii=False, indent=2)
+    ps.touch_project()
+    return volume
+
+
+def remove_chapter_from_all(node_id):
+    """Drop a deleted node from every volume's chapters (no-op if absent)."""
+    for v in list_volumes():
+        if node_id in (v.get("chapters") or []):
+            update_volume(v["id"], {"chapters": [c for c in v["chapters"] if c != node_id]})
 
 
 def delete_volume(volume_id):
@@ -142,3 +139,44 @@ def delete_volume(volume_id):
         if fp and os.path.exists(fp):
             os.remove(fp)
     ps.touch_project()
+
+
+def migrate_legacy_order():
+    """One-time: volumes that still carry an ``order`` (and no ``chapters``) get
+    their chapters inferred from that order, then the field is dropped."""
+    d = _dir()
+    if not os.path.isdir(d):
+        return
+    nodes = node_store.list_nodes()
+    node_order = {n["id"]: (n.get("order") if isinstance(n.get("order"), int) else 0) for n in nodes}
+
+    vols = []
+    for fn in os.listdir(d):
+        if not fn.endswith(".json"):
+            continue
+        fp = os.path.join(d, fn)
+        try:
+            with open(fp, encoding="utf-8") as f:
+                v = json.load(f)
+        except Exception:
+            continue
+        if not isinstance(v, dict) or "chapters" in v:
+            continue
+        vols.append((fp, v))
+    if not vols:
+        return
+    vols.sort(key=lambda x: (x[1].get("order") if isinstance(x[1].get("order"), int) else 0))
+    with _lock:
+        for i, (fp, v) in enumerate(vols):
+            lo = v.get("order") if isinstance(v.get("order"), int) else 0
+            hi = None
+            if i + 1 < len(vols):
+                hi = vols[i + 1][1].get("order")
+                if not isinstance(hi, int):
+                    hi = None
+            chapters = [nid for nid, o in node_order.items() if o > lo and (hi is None or o < hi)]
+            chapters.sort(key=lambda nid: node_order.get(nid, 0))
+            v["chapters"] = chapters
+            v.pop("order", None)
+            with open(fp, "w", encoding="utf-8") as f:
+                json.dump(v, f, ensure_ascii=False, indent=2)

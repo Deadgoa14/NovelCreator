@@ -142,7 +142,7 @@ export function ExportPage() {
               {storylines.length === 0 && <option value="">暂无故事线</option>}
               {storylines.map((s) => (
                 <option key={s.id} value={s.id}>
-                  {s.name}（{s.nodes.length} 个节点）
+                  {s.name}
                 </option>
               ))}
             </select>

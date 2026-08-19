@@ -1,5 +1,5 @@
 import { useStore } from '../store'
-import { FONT_FAMILIES, FONT_SIZES, useSettings, type WhiteboardDirection } from '../settings'
+import { FONT_FAMILIES, FONT_SIZES, useSettings, type HighlightStyle, type WhiteboardDirection } from '../settings'
 
 const inputCls =
   'w-full text-sm border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-100'
@@ -78,6 +78,33 @@ export function SettingsPage() {
           </Row>
         </Section>
 
+        <Section title="文字高亮">
+          <Row label="人物文字样式">
+            <select
+              value={s.characterHighlightStyle}
+              onChange={(e) => s.set({ characterHighlightStyle: e.target.value as HighlightStyle })}
+              className={inputCls}
+            >
+              <option value="none">无</option>
+              <option value="color">字体彩色</option>
+              <option value="highlight">字体高亮</option>
+              <option value="both">两者兼具</option>
+            </select>
+          </Row>
+          <Row label="概念文字样式">
+            <select
+              value={s.conceptHighlightStyle}
+              onChange={(e) => s.set({ conceptHighlightStyle: e.target.value as HighlightStyle })}
+              className={inputCls}
+            >
+              <option value="none">无</option>
+              <option value="color">字体彩色</option>
+              <option value="highlight">字体高亮</option>
+              <option value="both">两者兼具</option>
+            </select>
+          </Row>
+        </Section>
+
         <Section title="白板">
           <Row label="白板展开梗概字号（px）">
             <input
@@ -87,6 +114,22 @@ export function SettingsPage() {
               value={s.whiteboardBeatFontSize}
               onChange={(e) => s.set({ whiteboardBeatFontSize: Number(e.target.value) || 11 })}
               className="w-20 text-sm border border-gray-300 rounded-md px-2 py-1.5 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-100"
+            />
+          </Row>
+          <Row label="剧情节点默认颜色">
+            <input
+              type="color"
+              value={s.plotNodeColor}
+              onChange={(e) => s.set({ plotNodeColor: e.target.value })}
+              className="h-8 w-14 border border-gray-300 rounded-md cursor-pointer"
+            />
+          </Row>
+          <Row label="卷节点默认颜色">
+            <input
+              type="color"
+              value={s.volumeNodeColor}
+              onChange={(e) => s.set({ volumeNodeColor: e.target.value })}
+              className="h-8 w-14 border border-gray-300 rounded-md cursor-pointer"
             />
           </Row>
         </Section>

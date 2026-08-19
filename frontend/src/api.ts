@@ -1,4 +1,4 @@
-import type { Beat, Concept, ExportSettings, NodeDetail, NodeSummary, Point, ProjectData, Relation, Storyline, Volume } from './types'
+import type { Beat, Concept, Connection, ExportSettings, NodeDetail, NodeSummary, Point, ProjectData, Question, Relation, Storyline, Volume } from './types'
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const res = await fetch(path, {
@@ -49,8 +49,6 @@ async function streamRequest(path: string, body: unknown, onChunk: (text: string
     onChunk(decoder.decode(value, { stream: true }))
   }
 }
-
-export type ReorderItem = { type: 'node' | 'volume'; id: string }
 
 export interface AiConfig {
   baseURL: string
@@ -155,22 +153,26 @@ export const api = {
   listNodes: () => request<NodeSummary[]>('/api/nodes'),
   createNode: () => request<NodeDetail>('/api/nodes', { method: 'POST' }),
   getNode: (id: string) => request<NodeDetail>(`/api/nodes/${id}`),
-  updateNode: (id: string, meta: Partial<{ title: string; beats: Beat[]; characters: string[]; order: number }>) =>
-    request<NodeDetail>(`/api/nodes/${id}`, { method: 'PUT', body: JSON.stringify(meta) }),
+  updateNode: (
+    id: string,
+    meta: Partial<{ title: string; beats: Beat[]; characters: string[]; order: number; questions: Question[] }>,
+  ) => request<NodeDetail>(`/api/nodes/${id}`, { method: 'PUT', body: JSON.stringify(meta) }),
   saveBody: (id: string, body: string) =>
     request<NodeDetail>(`/api/nodes/${id}/body`, { method: 'PUT', body: JSON.stringify({ body }) }),
   deleteNode: (id: string) => request<{ ok: boolean }>(`/api/nodes/${id}`, { method: 'DELETE' }),
 
   listVolumes: () => request<Volume[]>('/api/volumes'),
-  createVolume: () => request<Volume>('/api/volumes', { method: 'POST', body: JSON.stringify({}) }),
-  updateVolume: (id: string, patch: Partial<{ name: string; intro: string; body: string }>) =>
+  createVolume: (name = '') => request<Volume>('/api/volumes', { method: 'POST', body: JSON.stringify({ name }) }),
+  updateVolume: (id: string, patch: Partial<{ name: string; intro: string; body: string; chapters: string[] }>) =>
     request<Volume>(`/api/volumes/${id}`, { method: 'PUT', body: JSON.stringify(patch) }),
+  setVolumeChapters: (id: string, chapters: string[]) =>
+    request<Volume>(`/api/volumes/${id}/chapters`, { method: 'PUT', body: JSON.stringify({ chapters }) }),
   deleteVolume: (id: string) => request<{ ok: boolean }>(`/api/volumes/${id}`, { method: 'DELETE' }),
 
-  reorderItems: (items: ReorderItem[]) =>
-    request<{ nodes: NodeSummary[]; volumes: Volume[] }>('/api/items/reorder', {
+  reorderNodes: (ids: string[]) =>
+    request<NodeSummary[]>('/api/nodes/reorder', {
       method: 'POST',
-      body: JSON.stringify({ items }),
+      body: JSON.stringify({ ids }),
     }),
 
   getConcepts: () => request<{ concepts: Concept[]; relations: Relation[] }>('/api/concepts'),
@@ -190,6 +192,12 @@ export const api = {
     request<Storyline>(`/api/storylines/${id}`, { method: 'PUT', body: JSON.stringify(s) }),
   deleteStoryline: (id: string) => request<{ ok: boolean }>(`/api/storylines/${id}`, { method: 'DELETE' }),
 
+  getConnections: () => request<{ connections: Connection[] }>('/api/connections'),
+  createConnection: (from: string, to: string) =>
+    request<Connection | { ok: boolean }>('/api/connections', { method: 'POST', body: JSON.stringify({ from, to }) }),
+  deleteConnection: (id: string) => request<{ ok: boolean }>(`/api/connections/${id}`, { method: 'DELETE' }),
+  setConnectionActive: (id: string) => request<{ ok: boolean }>(`/api/connections/${id}/active`, { method: 'PUT' }),
+
   saveRelations: (relations: Relation[]) =>
     request<{ ok: boolean }>('/api/relations', { method: 'PUT', body: JSON.stringify({ relations }) }),
 
@@ -199,6 +207,16 @@ export const api = {
     request<{ ok: boolean }>(`/api/board/start/${storylineId}/position`, { method: 'PUT', body: JSON.stringify(position) }),
   setCharacterPosition: (conceptId: string, position: Point) =>
     request<{ ok: boolean }>(`/api/board/character/${conceptId}/position`, {
+      method: 'PUT',
+      body: JSON.stringify(position),
+    }),
+  setVolumePosition: (volumeId: string, position: Point) =>
+    request<{ ok: boolean }>(`/api/board/volume/${volumeId}/position`, {
+      method: 'PUT',
+      body: JSON.stringify(position),
+    }),
+  setVolumeTerminalPosition: (volumeId: string, terminal: 'start' | 'end', position: Point) =>
+    request<{ ok: boolean }>(`/api/board/volume/${volumeId}/${terminal}/position`, {
       method: 'PUT',
       body: JSON.stringify(position),
     }),
@@ -234,6 +252,11 @@ export const api = {
 
   saveExportSettings: (s: ExportSettings) =>
     request<ExportSettings>('/api/export-settings', { method: 'PUT', body: JSON.stringify(s) }),
+  exportData: (kind: 'concepts' | 'characters' | 'outlines', format: 'txt' | 'md') =>
+    request<{ filename: string; content: string }>('/api/export/data', {
+      method: 'POST',
+      body: JSON.stringify({ kind, format }),
+    }),
 
   shutdown: () => request<{ ok: boolean }>('/api/shutdown', { method: 'POST' }),
   heartbeat: () => request<{ ok: boolean }>('/api/heartbeat', { method: 'POST' }),
@@ -250,14 +273,19 @@ export const api = {
     }),
   analyzeRaw: (text: string) =>
     request<RawAnalysis>('/api/ai/analyze-raw', { method: 'POST', body: JSON.stringify({ text }) }),
-  aiContinue: (nodeId: string, beatIndex: number) =>
-    request<{ text: string }>('/api/ai/continue', { method: 'POST', body: JSON.stringify({ nodeId, beatIndex }) }),
+  aiContinue: (nodeId: string, beatIndex: number, notes: string[] = []) =>
+    request<{ text: string }>('/api/ai/continue', { method: 'POST', body: JSON.stringify({ nodeId, beatIndex, notes }) }),
+  resolveQuestions: (nodeId: string, questions: string[]) =>
+    request<{ answers: string[] }>('/api/ai/resolve-questions', {
+      method: 'POST',
+      body: JSON.stringify({ nodeId, questions }),
+    }),
   aiBeat: (nodeId: string) => request<{ text: string }>('/api/ai/beat', { method: 'POST', body: JSON.stringify({ nodeId }) }),
   aiPolish: (text: string) => request<{ text: string }>('/api/ai/polish', { method: 'POST', body: JSON.stringify({ text }) }),
   aiProofread: (text: string) =>
     request<{ text: string }>('/api/ai/proofread', { method: 'POST', body: JSON.stringify({ text }) }),
-  streamContinue: (nodeId: string, beatIndex: number, onChunk: (text: string) => void) =>
-    streamRequest('/api/ai/stream/continue', { nodeId, beatIndex }, onChunk),
+  streamContinue: (nodeId: string, beatIndex: number, notes: string[], onChunk: (text: string) => void) =>
+    streamRequest('/api/ai/stream/continue', { nodeId, beatIndex, notes }, onChunk),
   streamPolish: (text: string, onChunk: (text: string) => void) =>
     streamRequest('/api/ai/stream/polish', { text }, onChunk),
   streamProofread: (text: string, onChunk: (text: string) => void) =>

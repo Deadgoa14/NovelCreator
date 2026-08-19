@@ -1,13 +1,14 @@
 import { useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import type { EditorView } from '@codemirror/view'
-import { api } from '../api'
+import { api, errorMessage } from '../api'
 import { useStore } from '../store'
 import { useSettings } from '../settings'
 import { uid } from '../util'
 import { launchContinue, launchExtract, launchPolish, launchProofread, launchSummarize } from '../aiTasks'
 import { CodeBodyEditor } from './CodeBodyEditor'
-import type { Beat, Volume } from '../types'
+import { useDialog } from './Dialog'
+import type { Beat, Question, Volume } from '../types'
 
 // Shared non-exported-text styling: italic + reduced opacity.
 const nonExportCls = 'italic opacity-60'
@@ -22,18 +23,23 @@ export function EditorPane() {
   const patchVolumes = useStore((s) => s.patchVolumes)
   const concepts = useStore((s) => s.concepts)
   const focusBeat = useStore((s) => s.focusBeat)
+  const setActivePage = useStore((s) => s.setActivePage)
+  const requestNewConcept = useStore((s) => s.requestNewConcept)
   const { previewFontFamily, previewFontSize, previewTextBg, previewMarginBg, theme, summarizeChars } = useSettings()
   const textColor = theme === 'dark' ? '#e5e7eb' : '#1f2937'
   const summaryColor = theme === 'dark' ? '#d1d5db' : '#4b5563'
 
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const pendingRef = useRef<{ title?: string; beats?: Beat[] }>({})
+  const pendingRef = useRef<{ title?: string; beats?: Beat[]; questions?: Question[] }>({})
   const volTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const volPendingRef = useRef<Partial<Volume>>({})
   const beatTextRefs = useRef<Record<string, EditorView | null>>({})
   const beatSectionRefs = useRef<Record<string, HTMLElement | null>>({})
   const lastFocusNonce = useRef<number | null>(null)
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
+  const [notePick, setNotePick] = useState<{ beatIndex: number; notes: string[] } | null>(null)
+  const [resolving, setResolving] = useState(false)
+  const { alert } = useDialog()
 
   const selectedVolume: Volume | null = volumes.find((v) => v.id === currentVolumeId) ?? null
 
@@ -60,7 +66,7 @@ export function EditorPane() {
     setCollapsed(new Set())
   }, [currentNodeId])
 
-  function scheduleSave(patch: { title?: string; beats?: Beat[] }) {
+  function scheduleSave(patch: { title?: string; beats?: Beat[]; questions?: Question[] }) {
     pendingRef.current = { ...pendingRef.current, ...patch }
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
     saveTimerRef.current = setTimeout(async () => {
@@ -97,6 +103,11 @@ export function EditorPane() {
     scheduleSave({ beats: next })
   }
 
+  function onQuestionsChange(questions: Question[]) {
+    patchCurrentNode({ questions })
+    scheduleSave({ questions })
+  }
+
   function addBeat() {
     const beats = currentNode?.beats ?? []
     const next = [...beats, { id: uid('beat'), text: '', body: '' }]
@@ -130,6 +141,51 @@ export function EditorPane() {
   // ----- AI helpers -----
   function nodeBodyText() {
     return (currentNode?.beats ?? []).map((b) => (b.text || '') + '\n' + (b.body || '')).join('\n')
+  }
+
+  function onContinue(index: number) {
+    const notes = currentNode?.beats?.[index]?.notes ?? []
+    if (!notes.length) {
+      launchContinue(currentNodeId ?? '', index)
+      return
+    }
+    setNotePick({ beatIndex: index, notes })
+  }
+
+  function addQuestion() {
+    const next = [...(currentNode?.questions ?? []), { id: uid('question'), text: '', answer: '' }]
+    onQuestionsChange(next)
+  }
+
+  function registerText(type: 'character' | 'generic', text: string) {
+    setActivePage(type === 'character' ? 'characters' : 'concepts')
+    requestNewConcept(type, text)
+  }
+
+  async function resolveQuestions() {
+    const qs = currentNode?.questions ?? []
+    const pendingIdx = qs.map((q, i) => ((q.answer ?? '').trim() ? -1 : i)).filter((i) => i !== -1)
+    if (!pendingIdx.length) {
+      await alert('没有未回答的问题')
+      return
+    }
+    setResolving(true)
+    try {
+      const r = await api.resolveQuestions(
+        currentNodeId ?? '',
+        pendingIdx.map((i) => qs[i].text),
+      )
+      const answers = r.answers ?? []
+      const next = qs.map((q, i) => {
+        const pos = pendingIdx.indexOf(i)
+        return pos !== -1 && answers[pos] ? { ...q, answer: answers[pos] } : q
+      })
+      onQuestionsChange(next)
+    } catch (e) {
+      await alert(errorMessage(e))
+    } finally {
+      setResolving(false)
+    }
   }
 
   if (!selectedVolume && !currentNode) {
@@ -203,6 +259,7 @@ export function EditorPane() {
             fontSize={previewFontSize}
             textColor={textColor}
             placeholder="一首诗、一段引子…（换行即分段）"
+            onRegister={registerText}
           />
         </section>
       </>
@@ -211,6 +268,7 @@ export function EditorPane() {
   }
 
   const beats = currentNode!.beats ?? []
+  const questions = currentNode!.questions ?? []
   const body = (
     <>
       <input
@@ -260,6 +318,7 @@ export function EditorPane() {
                 onReady={(view) => {
                   beatTextRefs.current[b.id] = view
                 }}
+                onRegister={registerText}
               />
               <button onClick={() => removeBeat(i)} className="text-gray-300 hover:text-red-500 text-sm shrink-0" title="删除条目">
                 ✕
@@ -267,6 +326,36 @@ export function EditorPane() {
             </div>
             {!isCollapsed && (
               <>
+                <div className="mb-2 space-y-1">
+                  {(b.notes ?? []).map((n, ni) => (
+                    <div key={ni} className="flex items-center gap-1.5">
+                      <span className="text-[11px] text-amber-600 dark:text-amber-400 shrink-0">要点</span>
+                      <input
+                        value={n}
+                        onChange={(e) => {
+                          const notes = [...(b.notes ?? [])]
+                          notes[ni] = e.target.value
+                          onBeatChange(i, { notes })
+                        }}
+                        placeholder="写作要点…（生成正文时可选作提示）"
+                        className="flex-1 text-xs bg-transparent border-b border-dashed border-gray-300 dark:border-gray-600 focus:outline-none focus:border-amber-400 text-amber-700 dark:text-amber-300"
+                      />
+                      <button
+                        onClick={() => onBeatChange(i, { notes: (b.notes ?? []).filter((_, x) => x !== ni) })}
+                        className="text-gray-300 hover:text-red-500 text-xs shrink-0"
+                        title="删除要点"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  ))}
+                  <button
+                    onClick={() => onBeatChange(i, { notes: [...(b.notes ?? []), ''] })}
+                    className="text-[11px] text-gray-400 hover:text-amber-600"
+                  >
+                    ＋ 写作要点
+                  </button>
+                </div>
                 <CodeBodyEditor
                   value={b.body ?? ''}
                   onChange={(v) => onBeatChange(i, { body: v })}
@@ -275,10 +364,14 @@ export function EditorPane() {
                   fontSize={previewFontSize}
                   textColor={textColor}
                   placeholder="在这里写正文，换行即分段…"
+                  onRegister={registerText}
                 />
                 <div className="mt-1 flex items-center justify-end gap-3">
+                  {!((b.body ?? '').trim()) && (
+                    <span className="text-[10px] text-amber-600 dark:text-amber-400 mr-auto">未写正文</span>
+                  )}
                   <button
-                    onClick={() => launchContinue(currentNodeId ?? '', i)}
+                    onClick={() => onContinue(i)}
                     className="text-xs text-gray-400 hover:text-blue-600"
                   >
                     ✨ 续写
@@ -301,12 +394,72 @@ export function EditorPane() {
           </section>
         )
       })}
+      <section className="mt-8 border-t border-gray-200 dark:border-gray-700 pt-4">
+        <div className="flex items-center justify-between mb-2">
+          <div className="text-[11px] uppercase tracking-wide text-gray-500 dark:text-gray-400">问题（未解决，可交给 AI 补全）</div>
+          <button
+            onClick={resolveQuestions}
+            disabled={resolving}
+            className="text-xs text-violet-600 hover:text-violet-700 disabled:opacity-50"
+          >
+            {resolving ? '补全中…' : '✨ 补全答案'}
+          </button>
+        </div>
+        {questions.length === 0 && <div className="text-gray-400 text-xs mb-2">暂无问题</div>}
+        {questions.map((q, qi) => (
+          <div key={q.id || qi} className="mb-3">
+            <div className="flex items-center gap-2">
+              <input
+                value={q.text}
+                onChange={(e) => {
+                  const next = [...questions]
+                  next[qi] = { ...q, text: e.target.value }
+                  onQuestionsChange(next)
+                }}
+                placeholder="问题…"
+                className="flex-1 text-sm bg-transparent border-b border-gray-200 dark:border-gray-700 focus:outline-none focus:border-violet-500 text-gray-800 dark:text-gray-200"
+              />
+              <button
+                onClick={() => onQuestionsChange(questions.filter((_, x) => x !== qi))}
+                className="text-gray-300 hover:text-red-500 text-sm shrink-0"
+                title="删除问题"
+              >
+                ✕
+              </button>
+            </div>
+            <textarea
+              value={q.answer ?? ''}
+              onChange={(e) => {
+                const next = [...questions]
+                next[qi] = { ...q, answer: e.target.value }
+                onQuestionsChange(next)
+              }}
+              rows={2}
+              placeholder="答案（可让 AI 补全）…"
+              className="mt-1 w-full text-xs bg-transparent resize-y focus:outline-none text-violet-700 dark:text-violet-300"
+            />
+          </div>
+        ))}
+        <button onClick={addQuestion} className="text-xs text-gray-400 hover:text-violet-600">
+          ＋ 问题
+        </button>
+      </section>
       <button
         onClick={addBeat}
         className="w-full py-2 rounded-md border border-dashed border-gray-300 dark:border-gray-600 text-sm text-gray-500 dark:text-gray-400 hover:text-blue-600 hover:border-blue-400 transition-colors"
       >
         ＋ 添加条目
       </button>
+      {notePick && (
+        <NotesPickModal
+          notes={notePick.notes}
+          onCancel={() => setNotePick(null)}
+          onConfirm={(selected) => {
+            launchContinue(currentNodeId ?? '', notePick.beatIndex, selected)
+            setNotePick(null)
+          }}
+        />
+      )}
     </>
   )
   const foldAction = beats.length > 0 ? (
@@ -318,4 +471,64 @@ export function EditorPane() {
     </button>
   ) : null
   return shell(<span title={currentNode!.title}>{currentNode!.title || '未命名节点'}</span>, body, foldAction)
+}
+
+function NotesPickModal({
+  notes,
+  onCancel,
+  onConfirm,
+}: {
+  notes: string[]
+  onCancel: () => void
+  onConfirm: (selected: string[]) => void
+}) {
+  const [sel, setSel] = useState<Set<number>>(new Set(notes.map((_, i) => i)))
+  const all = sel.size === notes.length
+  return (
+    <div className="fixed inset-0 z-[300] flex items-center justify-center bg-black/40">
+      <div className="w-[380px] max-w-[90vw] bg-white dark:bg-gray-800 rounded-xl shadow-xl p-5">
+        <div className="text-sm text-gray-800 dark:text-gray-100 mb-3">选择作为提示词的写作要点</div>
+        <div className="space-y-2 mb-4 max-h-64 overflow-y-auto">
+          {notes.map((n, i) => (
+            <label key={i} className="flex items-start gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={sel.has(i)}
+                onChange={(e) => {
+                  const next = new Set(sel)
+                  if (e.target.checked) next.add(i)
+                  else next.delete(i)
+                  setSel(next)
+                }}
+                className="mt-0.5 h-4 w-4 rounded border-gray-300"
+              />
+              <span className="text-sm text-gray-600 dark:text-gray-300 break-words">{n}</span>
+            </label>
+          ))}
+        </div>
+        <div className="flex items-center justify-between mb-4">
+          <button
+            onClick={() => setSel(all ? new Set() : new Set(notes.map((_, i) => i)))}
+            className="text-xs text-blue-600 hover:text-blue-700"
+          >
+            {all ? '全不选' : '全选'}
+          </button>
+        </div>
+        <div className="flex justify-end gap-2">
+          <button
+            onClick={onCancel}
+            className="px-3 py-1.5 rounded-md text-sm text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+          >
+            取消
+          </button>
+          <button
+            onClick={() => onConfirm(notes.filter((_, i) => sel.has(i)))}
+            className="px-3 py-1.5 rounded-md text-sm bg-blue-600 text-white hover:bg-blue-700"
+          >
+            确定
+          </button>
+        </div>
+      </div>
+    </div>
+  )
 }

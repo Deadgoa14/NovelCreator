@@ -90,10 +90,29 @@ def _branch_order(storyline):
 
 
 def _resolve_order(storyline):
-    """Ordered node-id list to export, regardless of storyline type."""
-    if storyline.get("type") == "branch":
-        return _branch_order(storyline)
-    return storyline.get("nodes", [])
+    """Ordered node-id list to export: follow the active connections from the
+    storyline's 线头 id, expanding volume ids to their chapters."""
+    from . import connection_store, volume_store
+
+    vol_chapters = {v["id"]: (v.get("chapters") or []) for v in volume_store.list_volumes()}
+    by_from = {}
+    for c in connection_store.list_connections():
+        if c.get("active"):
+            by_from.setdefault(c.get("from"), []).append(c.get("to"))
+
+    order = []
+    cur = storyline.get("id")
+    seen = set()
+    while cur and cur not in seen:
+        seen.add(cur)
+        if cur != storyline.get("id"):
+            if cur in vol_chapters:
+                order.extend(vol_chapters[cur])
+            else:
+                order.append(cur)
+        nxts = by_from.get(cur) or []
+        cur = nxts[0] if nxts else None
+    return order
 
 
 def _opts(opts):
@@ -111,20 +130,18 @@ def export_storyline(storyline, opts=None):
     o = _opts(opts)
     nodes_dir = os.path.join(ps.get_current_path(), ps.NODES_DIR)
 
-    # Build the "which volume does each node belong to" map from global order.
+    # Build the "which volume does each node belong to" map from volume.chapters.
     nodes = node_store.list_nodes()
-    volumes = sorted(volume_store.list_volumes(), key=lambda v: (v.get("order") or 0))
     node_order = {n["id"]: (n.get("order") if isinstance(n.get("order"), int) else 0) for n in nodes}
     volume_map = {}
-    for n in nodes:
-        o_n = node_order[n["id"]]
-        vol = None
-        for v in volumes:
-            if (v.get("order") if isinstance(v.get("order"), int) else 0) < o_n:
-                vol = v
-            else:
-                break
-        volume_map[n["id"]] = vol
+    for v in volume_store.list_volumes():
+        for nid in v.get("chapters") or []:
+            volume_map[nid] = v
+    # Order volumes by their first chapter's position for stable 卷 numbering.
+    def _vol_key(v):
+        orders = [node_order.get(c, 0) for c in (v.get("chapters") or [])]
+        return min(orders) if orders else 0
+    volumes = sorted(volume_store.list_volumes(), key=_vol_key)
     volume_by_id = {v["id"]: v for v in volumes}
     volume_index = {v["id"]: i + 1 for i, v in enumerate(volumes)}
 
@@ -187,3 +204,75 @@ def export_node(node_id, opts=None):
     for beat in meta.get("beats", []) or []:
         char_count += sum(1 for ch in (beat.get("body") or "") if not ch.isspace())
     return content, char_count
+
+
+# ---------------------------------------------------------------- data export
+def export_data(kind, fmt="txt"):
+    """Export concepts / characters / plot outlines as txt or markdown."""
+    from . import concept_store
+
+    concepts = concept_store.list_concepts()
+    by_id = {c["id"]: c for c in concepts}
+
+    if kind in ("concepts", "characters"):
+        items = [c for c in concepts if (c.get("type") == "character") == (kind == "characters")]
+        return _render_concepts(items, by_id, fmt)
+
+    # outlines: node title + 梗概 (beat text)
+    nodes = node_store.list_nodes()
+    return _render_outlines(nodes, fmt)
+
+
+def _concept_attrs(c, by_id):
+    attrs = []
+    aliases = c.get("aliases") or []
+    if aliases:
+        attrs.append(("别名", "、".join(str(a) for a in aliases)))
+    if c.get("type") == "character":
+        if c.get("identity"):
+            attrs.append(("身份", str(c.get("identity"))))
+        if c.get("personality"):
+            attrs.append(("性格", str(c.get("personality"))))
+        if c.get("background"):
+            attrs.append(("背景", str(c.get("background"))))
+        if c.get("category"):
+            attrs.append(("类", str(c.get("category"))))
+    else:
+        tmap = {"generic": "通用", "place": "地点", "item": "物品"}
+        attrs.append(("类型", tmap.get(c.get("type"), "通用")))
+    if c.get("description"):
+        attrs.append(("描述", str(c.get("description"))))
+    tags = [by_id[t].get("name") for t in (c.get("tags") or []) if t in by_id and by_id[t].get("name")]
+    if tags:
+        attrs.append(("标签", "、".join(tags)))
+    return attrs
+
+
+def _render_concepts(items, by_id, fmt):
+    blocks = []
+    for c in items:
+        name = c.get("name") or "未命名"
+        attrs = _concept_attrs(c, by_id)
+        if fmt == "md":
+            lines = [f"## {name}"]
+            for k, v in attrs:
+                lines.append(f"- {k}：{v}")
+        else:
+            lines = [name]
+            for k, v in attrs:
+                lines.append(f"{k}：{v}")
+        blocks.append("\n".join(lines))
+    return ("\n\n".join(blocks) + "\n") if blocks else ""
+
+
+def _render_outlines(nodes, fmt):
+    blocks = []
+    for n in nodes:
+        title = n.get("title") or "未命名节点"
+        lines = [f"## {title}" if fmt == "md" else title]
+        for i, b in enumerate(n.get("beats") or [], start=1):
+            text = (b.get("text") or "").strip()
+            if text:
+                lines.append(f"{i}. {text}")
+        blocks.append("\n".join(lines))
+    return ("\n\n".join(blocks) + "\n") if blocks else ""

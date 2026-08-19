@@ -10,6 +10,7 @@ from . import (
     ai,
     board_store,
     concept_store,
+    connection_store,
     export as export_mod,
     node_store,
     project_store as ps,
@@ -39,10 +40,15 @@ class UpdateNodeReq(BaseModel):
     beats: Optional[List[Any]] = None
     characters: Optional[List[str]] = None
     order: Optional[int] = None
+    questions: Optional[List[Any]] = None
 
 
-class ReorderItemsReq(BaseModel):
-    items: List[dict] = Field(default_factory=list)
+class ReorderNodesReq(BaseModel):
+    ids: List[str] = Field(default_factory=list)
+
+
+class ChaptersReq(BaseModel):
+    chapters: List[str] = Field(default_factory=list)
 
 
 class BodyReq(BaseModel):
@@ -59,6 +65,8 @@ class ConceptReq(BaseModel):
     personality: str = ""
     background: str = ""
     identity: str = ""
+    category: Optional[str] = None
+    tags: Optional[List[str]] = None
 
 
 class PositionReq(BaseModel):
@@ -76,16 +84,19 @@ class StorylineReq(BaseModel):
     id: Optional[str] = None
     name: str = ""
     color: str = "#4caf50"
-    nodes: List[str] = Field(default_factory=list)
-    type: str = "single"
-    edges: List[Any] = Field(default_factory=list)
-    start: Optional[str] = None
+
+
+class ConnectionReq(BaseModel):
+    source: str = Field(alias="from")
+    target: str = Field(alias="to")
+    model_config = {"populate_by_name": True}
 
 
 class VolumeReq(BaseModel):
     name: Optional[str] = None
     intro: Optional[str] = None
     body: Optional[str] = None
+    chapters: Optional[List[str]] = None
 
 
 class RelationsReq(BaseModel):
@@ -110,6 +121,11 @@ class ExportSettingsReq(BaseModel):
     chapterTailBlank: int = 0
 
 
+class DataExportReq(BaseModel):
+    kind: str = "concepts"  # concepts | characters | outlines
+    format: str = "txt"  # txt | md
+
+
 class AiConfigReq(BaseModel):
     baseURL: str = ""
     apiKey: str = ""
@@ -125,6 +141,12 @@ class AiTextReq(BaseModel):
 class AiContinueReq(BaseModel):
     nodeId: str
     beatIndex: int = 0
+    notes: List[str] = Field(default_factory=list)
+
+
+class AiResolveReq(BaseModel):
+    nodeId: str
+    questions: List[str] = Field(default_factory=list)
 
 
 class AiBeatReq(BaseModel):
@@ -275,20 +297,30 @@ def update_volume(volume_id: str, req: VolumeReq):
         raise _http(e)
 
 
+@router.put("/volumes/{volume_id}/chapters")
+def set_volume_chapters(volume_id: str, req: ChaptersReq):
+    try:
+        return volume_store.set_chapters(volume_id, req.chapters)
+    except ps.ProjectError as e:
+        raise _http(e)
+
+
 @router.delete("/volumes/{volume_id}")
 def delete_volume(volume_id: str):
     try:
         volume_store.delete_volume(volume_id)
+        board_store.remove_volume_position(volume_id)
+        connection_store.remove_connections_touching(volume_id)
         return {"ok": True}
     except ps.ProjectError as e:
         raise _http(e)
 
 
 # ---------------------------------------------------------------- ordering
-@router.post("/items/reorder")
-def reorder_items(req: ReorderItemsReq):
+@router.post("/nodes/reorder")
+def reorder_nodes(req: ReorderNodesReq):
     try:
-        return node_store.reorder_items(req.items)
+        return node_store.reorder_nodes(req.ids)
     except ps.ProjectError as e:
         raise _http(e)
 
@@ -363,7 +395,33 @@ def update_storyline(line_id: str, req: StorylineReq):
 def delete_storyline(line_id: str):
     try:
         storyline_store.delete_storyline(line_id)
+        connection_store.remove_connections_touching(line_id)
         return {"ok": True}
+    except ps.ProjectError as e:
+        raise _http(e)
+
+
+# ---------------------------------------------------------------- connections
+@router.get("/connections")
+def get_connections():
+    return {"connections": connection_store.list_connections()}
+
+
+@router.post("/connections")
+def create_connection(req: ConnectionReq):
+    conn = connection_store.create_connection(req.source, req.target)
+    return conn if conn else {"ok": True}
+
+
+@router.delete("/connections/{conn_id}")
+def delete_connection(conn_id: str):
+    return connection_store.delete_connection(conn_id)
+
+
+@router.put("/connections/{conn_id}/active")
+def set_connection_active(conn_id: str):
+    try:
+        return connection_store.set_active(conn_id)
     except ps.ProjectError as e:
         raise _http(e)
 
@@ -391,6 +449,16 @@ def set_character_position(concept_id: str, req: PositionReq):
     return board_store.set_character_position(concept_id, req.x, req.y)
 
 
+@router.put("/board/volume/{volume_id}/position")
+def set_volume_position(volume_id: str, req: PositionReq):
+    return board_store.set_volume_position(volume_id, req.x, req.y)
+
+
+@router.put("/board/volume/{volume_id}/{terminal}/position")
+def set_volume_terminal_position(volume_id: str, terminal: str, req: PositionReq):
+    return board_store.set_volume_terminal_position(volume_id, terminal, req.x, req.y)
+
+
 # ---------------------------------------------------------------- export
 @router.post("/export")
 def export(req: ExportReq):
@@ -415,6 +483,15 @@ def export(req: ExportReq):
     content, char_count = export_mod.export_storyline(sl, opts)
     name = sl.get("name") or "导出"
     return {"filename": f"{name}.txt", "content": content, "charCount": char_count}
+
+
+@router.post("/export/data")
+def export_data(req: DataExportReq):
+    kind = req.kind
+    fmt = req.format if req.format in ("txt", "md") else "txt"
+    label = {"concepts": "概念", "characters": "人物", "outlines": "剧情梗概"}.get(kind, "数据")
+    ext = "md" if fmt == "md" else "txt"
+    return {"filename": f"{label}.{ext}", "content": export_mod.export_data(kind, fmt)}
 
 
 # ---------------------------------------------------------------- export settings
@@ -481,7 +558,18 @@ def ai_continue(req: AiContinueReq):
         beats_up_to = beats[: req.beatIndex + 1]
         concepts = concept_store.list_concepts()
         related = [c for c in concepts if c.get("type") == "character"]
-        return {"text": ai.continue_body(meta.get("title", ""), beats_up_to, related)}
+        return {"text": ai.continue_body(meta.get("title", ""), beats_up_to, related, req.notes)}
+    except ps.ProjectError as e:
+        raise _http(e)
+
+
+@router.post("/ai/resolve-questions")
+def ai_resolve_questions(req: AiResolveReq):
+    try:
+        n = node_store.get_node(req.nodeId)
+        meta = n.get("meta") or {}
+        beats = meta.get("beats") or []
+        return {"answers": ai.resolve_questions(meta.get("title", ""), beats, req.questions)}
     except ps.ProjectError as e:
         raise _http(e)
 
@@ -522,7 +610,7 @@ async def ai_stream_continue(req: AiContinueReq):
         beats = meta.get("beats") or []
         beats_up_to = beats[: req.beatIndex + 1]
         concepts = [c for c in concept_store.list_concepts() if c.get("type") == "character"]
-        messages = ai.continue_messages(meta.get("title", ""), beats_up_to, concepts)
+        messages = ai.continue_messages(meta.get("title", ""), beats_up_to, concepts, req.notes)
         gen = await ai.stream_response(messages, temperature=0.8, max_tokens=4096)
     except ps.ProjectError as e:
         raise _http(e)

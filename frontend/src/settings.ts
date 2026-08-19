@@ -3,6 +3,8 @@ import { persist } from 'zustand/middleware'
 
 export type WhiteboardDirection = 'lr' | 'rl' | 'tb' | 'bt'
 
+export type HighlightStyle = 'none' | 'color' | 'highlight' | 'both'
+
 export interface Settings {
   theme: 'light' | 'dark'
   autoOpenLast: boolean
@@ -15,6 +17,10 @@ export interface Settings {
   previewMarginBg: string
   previewFontFamily: string
   previewFontSize: number
+  characterHighlightStyle: HighlightStyle
+  conceptHighlightStyle: HighlightStyle
+  plotNodeColor: string
+  volumeNodeColor: string
   set: (patch: Partial<Omit<Settings, 'set'>>) => void
 }
 
@@ -46,6 +52,10 @@ export const useSettings = create<Settings>()(
       previewMarginBg: '#f9fafb',
       previewFontFamily: DEFAULT_FONT_FAMILY,
       previewFontSize: 18,
+      characterHighlightStyle: 'both',
+      conceptHighlightStyle: 'both',
+      plotNodeColor: '#000000',
+      volumeNodeColor: '#6b7280',
       set: (patch) => set(patch),
     }),
     { name: 'ddgame-settings' },

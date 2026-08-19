@@ -11,6 +11,7 @@ VOLUMES_DIR = "volumes"
 RELATIONS_FILE = "relations.json"
 WHITEBOARD_FILE = "whiteboard.json"
 RELATIONS_BOARD_FILE = "relations-board.json"
+CONNECTIONS_FILE = "connections.json"
 NODES_DIR = "nodes"
 EXPORT_SETTINGS_FILE = "export-settings.json"
 
@@ -128,6 +129,7 @@ def create_project(path, name):
     write_json_file(RELATIONS_FILE, {"relations": []})
     write_json_file(WHITEBOARD_FILE, {"items": []})
     write_json_file(RELATIONS_BOARD_FILE, {"items": []})
+    write_json_file(CONNECTIONS_FILE, {"connections": []})
     write_json_file(EXPORT_SETTINGS_FILE, dict(DEFAULT_EXPORT_SETTINGS))
     from . import recent_store
 
@@ -149,7 +151,7 @@ def open_project(path):
 
 
 def load_project():
-    from . import board_store, concept_store, node_store, storyline_store, volume_store
+    from . import board_store, concept_store, connection_store, node_store, storyline_store, volume_store
 
     project = read_json_file(PROJECT_FILE, {})
     nodes = node_store.list_nodes()
@@ -158,6 +160,7 @@ def load_project():
         "concepts": {"concepts": concept_store.list_concepts(), "relations": concept_store.read_relations()},
         "storylines": {"storylines": storyline_store.list_storylines()},
         "volumes": volume_store.list_volumes(),
+        "connections": connection_store.list_connections(),
         "whiteboard": board_store.read_whiteboard(),
         "relationsBoard": board_store.read_relations_board(),
         "nodes": nodes,
@@ -208,3 +211,41 @@ def _migrate_legacy():
     from . import node_store
 
     node_store.migrate_positions_to_whiteboard()
+
+    # legacy volume ``order`` -> ``chapters``
+    from . import volume_store
+
+    volume_store.migrate_legacy_order()
+
+    # Final model: storylines are 线头 (named start nodes); the flow lives in
+    # active connections. Migrate storylines that still carry ``nodes`` (or the
+    # circuit-model ``start``) into 线头 + active connections.
+    from . import connection_store, storyline_store
+
+    slist = storyline_store.list_storylines()
+    if any(sl.get("nodes") or sl.get("start") for sl in slist):
+        old_conns = connection_store.list_connections()
+        by_from = {}
+        for c in old_conns:
+            by_from.setdefault(c.get("from"), []).append(c.get("to"))
+
+        ps.write_json_file(ps.CONNECTIONS_FILE, {"connections": []})
+
+        for sl in slist:
+            nodes = sl.get("nodes") or []
+            if not nodes and sl.get("start"):
+                seq = []
+                cur = sl.get("start")
+                seen = set()
+                while cur and cur not in seen:
+                    seen.add(cur)
+                    seq.append(cur)
+                    nxts = by_from.get(cur) or []
+                    cur = nxts[0] if nxts else None
+                nodes = seq
+            if nodes:
+                connection_store.create_connection(sl["id"], nodes[0])
+                for i in range(len(nodes) - 1):
+                    connection_store.create_connection(nodes[i], nodes[i + 1])
+            next_sl = {"id": sl["id"], "name": sl.get("name", ""), "color": sl.get("color", "#4caf50")}
+            storyline_store.update_storyline(sl["id"], next_sl)

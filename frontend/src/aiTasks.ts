@@ -109,12 +109,12 @@ export function launchSummarize(text: string, nodeId: string, chunkChars: number
   })()
 }
 
-export function launchContinue(nodeId: string, beatIndex: number) {
+export function launchContinue(nodeId: string, beatIndex: number, notes: string[] = []) {
   const id = spawn('continue', '续写', { nodeId, beatIndex })
   void runStream(
     id,
-    (on) => api.streamContinue(nodeId, beatIndex, on),
-    () => api.aiContinue(nodeId, beatIndex),
+    (on) => api.streamContinue(nodeId, beatIndex, notes, on),
+    () => api.aiContinue(nodeId, beatIndex, notes),
   )
 }
 

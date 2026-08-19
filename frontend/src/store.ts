@@ -2,9 +2,12 @@ import { create } from 'zustand'
 import type {
   Beat,
   Concept,
+  ConceptType,
+  Connection,
   ExportSettings,
   NodeSummary,
   ProjectData,
+  Question,
   Relation,
   RelationsBoardItem,
   Storyline,
@@ -12,12 +15,13 @@ import type {
   WhiteboardItem,
 } from './types'
 
-export type Page = 'raw' | 'ai' | 'nodes' | 'whiteboard' | 'concepts' | 'characters' | 'relations' | 'export' | 'settings'
+export type Page = 'raw' | 'mdimport' | 'ai' | 'nodes' | 'whiteboard' | 'concepts' | 'characters' | 'relations' | 'export' | 'settings'
 
 export interface CurrentNode {
   id: string
   title: string
   beats: Beat[]
+  questions: Question[]
 }
 
 interface AppState {
@@ -27,6 +31,7 @@ interface AppState {
   relations: Relation[]
   storylines: Storyline[]
   volumes: Volume[]
+  connections: Connection[]
   whiteboard: WhiteboardItem[]
   relationsBoard: RelationsBoardItem[]
   nodes: NodeSummary[]
@@ -38,6 +43,7 @@ interface AppState {
   focusBeat: { nodeId: string; beatId: string; nonce: number } | null
   ready: boolean
   skipAutoOpen: boolean
+  newConceptRequest: { type: ConceptType; name: string; nonce: number } | null
 
   setProject: (data: ProjectData, path: string) => void
   resetProject: () => void
@@ -51,10 +57,13 @@ interface AppState {
   patchConcepts: (concepts: Concept[], relations: Relation[]) => void
   patchStorylines: (storylines: Storyline[]) => void
   patchVolumes: (volumes: Volume[]) => void
+  patchConnections: (connections: Connection[]) => void
   patchWhiteboard: (whiteboard: WhiteboardItem[]) => void
   patchRelationsBoard: (relationsBoard: RelationsBoardItem[]) => void
   patchNodes: (nodes: NodeSummary[]) => void
   patchExportSettings: (exportSettings: ExportSettings) => void
+  requestNewConcept: (type: ConceptType, name: string) => void
+  consumeNewConceptRequest: () => void
 }
 
 export const useStore = create<AppState>((set) => ({
@@ -64,6 +73,7 @@ export const useStore = create<AppState>((set) => ({
   relations: [],
   storylines: [],
   volumes: [],
+  connections: [],
   whiteboard: [],
   relationsBoard: [],
   nodes: [],
@@ -75,6 +85,7 @@ export const useStore = create<AppState>((set) => ({
   focusBeat: null,
   ready: false,
   skipAutoOpen: false,
+  newConceptRequest: null,
 
   setProject: (data, path) =>
     set({
@@ -84,6 +95,7 @@ export const useStore = create<AppState>((set) => ({
       relations: data.concepts.relations,
       storylines: data.storylines.storylines,
       volumes: data.volumes,
+      connections: data.connections,
       whiteboard: data.whiteboard.items,
       relationsBoard: data.relationsBoard.items,
       nodes: data.nodes,
@@ -102,6 +114,7 @@ export const useStore = create<AppState>((set) => ({
       relations: [],
       storylines: [],
       volumes: [],
+      connections: [],
       whiteboard: [],
       relationsBoard: [],
       nodes: [],
@@ -120,8 +133,11 @@ export const useStore = create<AppState>((set) => ({
   patchConcepts: (concepts, relations) => set({ concepts, relations }),
   patchStorylines: (storylines) => set({ storylines }),
   patchVolumes: (volumes) => set({ volumes }),
+  patchConnections: (connections) => set({ connections }),
   patchWhiteboard: (whiteboard) => set({ whiteboard }),
   patchRelationsBoard: (relationsBoard) => set({ relationsBoard }),
   patchNodes: (nodes) => set({ nodes }),
   patchExportSettings: (exportSettings) => set({ exportSettings }),
+  requestNewConcept: (type, name) => set({ newConceptRequest: { type, name, nonce: Math.random() } }),
+  consumeNewConceptRequest: () => set({ newConceptRequest: null }),
 }))
