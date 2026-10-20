@@ -1,4 +1,4 @@
-import type { Beat, Concept, Connection, ExportSettings, NodeDetail, NodeSummary, Point, ProjectData, Question, Relation, Storyline, Volume } from './types'
+import type { Beat, Concept, Connection, ExportSettings, NodeDetail, NodeSummary, Point, ProjectData, Question, Relation, Storyline, TrashEntry, Volume } from './types'
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const res = await fetch(path, {
@@ -54,6 +54,7 @@ export interface AiConfig {
   baseURL: string
   apiKey: string
   model: string
+  economyModel: string
 }
 
 export interface AiConceptCandidate {
@@ -196,7 +197,12 @@ export const api = {
   createConnection: (from: string, to: string) =>
     request<Connection | { ok: boolean }>('/api/connections', { method: 'POST', body: JSON.stringify({ from, to }) }),
   deleteConnection: (id: string) => request<{ ok: boolean }>(`/api/connections/${id}`, { method: 'DELETE' }),
-  setConnectionActive: (id: string) => request<{ ok: boolean }>(`/api/connections/${id}/active`, { method: 'PUT' }),
+
+  getTrash: () => request<{ trash: TrashEntry[] }>('/api/trash'),
+  addTrash: (text: string, nodeId: string, beatId: string, max: number) =>
+    request<{ trash: TrashEntry[] }>('/api/trash', { method: 'POST', body: JSON.stringify({ text, nodeId, beatId, max }) }),
+  deleteTrash: (id: string) => request<{ ok: boolean }>(`/api/trash/${id}`, { method: 'DELETE' }),
+  clearTrash: () => request<{ ok: boolean }>('/api/trash/clear', { method: 'POST' }),
 
   saveRelations: (relations: Relation[]) =>
     request<{ ok: boolean }>('/api/relations', { method: 'PUT', body: JSON.stringify({ relations }) }),

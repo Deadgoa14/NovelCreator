@@ -23,7 +23,7 @@
 - **Local-first by default**: manuscript data lives in a plain folder on your own disk — `project.json`, `concepts.json`, `storylines.json`, and `nodes/*.md` (YAML front-matter + Markdown body). No cloud, no account.
 - **Structured long-form writing**: organize your book into volumes (卷) and chapter nodes (章节目录), each composed of beat entries (梗概条目) that pair a one-line summary (梗概, not exported) with the prose body (正文, exported).
 - **Worldbuilding that feeds back**: a concept library (characters / places / items / generic) with aliases and colors; concept names are auto-highlighted (colored font) inside the editor, and renaming an alias can trigger a global replace.
-- **Visual planning**: a relations whiteboard for character relationships and a storyline whiteboard with single/branch plots, an active-line state, and four flow directions.
+- **Visual planning**: a relations whiteboard for character relationships and a storyline whiteboard with linear plot chains, an active-line highlight, and four flow directions.
 - **Optional AI assistant** (via a backend proxy; key stays local): raw-text analysis (生文本分析), summarize 梗概 by word-count chunks, extract characters, continue / polish / proofread prose.
 - **Flexible export**: join the prose of every beat along a storyline's order, or export a single chapter; automatic chapter numbers, volume headers (`第1卷 卷名`), and configurable paragraph spacing.
 
@@ -59,7 +59,7 @@ NovelCreator 不是一个「一键生成小说」的工具，而是一个**帮�
 |---|---|
 | 长篇结构不散 | 卷 → 章节目录 → 梗概条目三层结构，节点可上下排序、按卷缩进归组 |
 | 设定能反哺写作 | 人物/地点/物品/概念进入结构化本地库，正文中自动彩色高亮 |
-| 关系与剧情可视化 | 人物关系白板、故事线白板（单线/分支 + 激活主线 + 四向布局） |
+| 关系与剧情可视化 | 人物关系白板、故事线白板（线性剧情链 + 高亮主线 + 四向布局） |
 | 素材快速入库 | 生文本分析：粘贴杂糅文本，AI 拆出标题/梗概/世界观/人物/概念/剧情，勾选导入 |
 | 稿件随时能拼 | 按故事线连接顺序一键拼接正文，或单独导出某一章，自动章节序号、卷序号 |
 | 数据本地优先 | 所有数据以文件夹形式存在用户指定的本地路径，AI 密钥也仅存本机后端 |
@@ -98,8 +98,8 @@ NovelCreator 不是一个「一键生成小说」的工具，而是一个**帮�
 
 ### 故事线白板
 
-- 故事线支持**单线 / 分支**两种类型，由 start 节点 + 有序节点序列 + 分支边组成。
-- 分支边有「激活 / 非激活」状态，激活主线高亮，并带流动边框动画。
+- 故事线是**线头（带名字的起始节点）+ 线性执行链**：每个节点至多一条出线，按连接顺序串联剧情；想分叉就断开重连或另建一条故事线。
+- 当前选中的故事线高亮显示（流动边框动画），执行链上的节点与连线以该线颜色流动。
 - 默认发展顺序可配置为 左→右 / 右→左 / 上→下 / 下→上，节点的把手方向、箭头、外观（上下方向自动切为竖排）随之变化。
 
 ### 导出
@@ -144,7 +144,7 @@ NovelCreator 不是一个「一键生成小说」的工具，而是一个**帮�
 |---|---|
 | 生文本分析 | 粘贴杂糅文本，AI 拆解为标题 / 梗概 / 世界观 / 人物 / 概念 / 剧情，勾选导入 |
 | 章节目录 | 节点 / 卷管理、梗概条目编辑、章节数切换 |
-| 故事线白板 | 单线 / 分支、激活主线、四向布局 |
+| 故事线白板 | 线性剧情链、高亮主线、四向布局 |
 | 概念 | 通用 / 人物 / 地点 / 物品，别名与颜色，改名全局替换 |
 | 人物 | 人物卡（性格 / 背景 / 身份） |
 | 人物关系 | 关系白板、关系连线与方向 |

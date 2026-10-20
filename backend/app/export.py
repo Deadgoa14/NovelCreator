@@ -57,48 +57,15 @@ def _volume_of_node(node_id, volume_map):
     return volume_map.get(node_id)
 
 
-def _branch_order(storyline):
-    """Return the ordered node-id list for a branch storyline.
-
-    Walk from ``start`` (fallback: the node with no incoming edge, then
-    ``nodes[0]``) following the unique active outgoing edge until there is
-    none. Inactive branches are skipped.
-    """
-    nodes = storyline.get("nodes") or []
-    edges = storyline.get("edges") or []
-    incoming = {e.get("to") for e in edges if isinstance(e, dict)}
-    root = storyline.get("start") or next((n for n in nodes if n not in incoming), (nodes[0] if nodes else None))
-    if not root:
-        return []
-    by_from = {}
-    for e in edges:
-        if isinstance(e, dict):
-            by_from.setdefault(e.get("from"), []).append(e)
-    order = []
-    cur = root
-    seen = set()
-    while cur and cur not in seen:
-        seen.add(cur)
-        order.append(cur)
-        nxt = None
-        for e in by_from.get(cur, []):
-            if e.get("active"):
-                nxt = e.get("to")
-                break
-        cur = nxt
-    return order
-
-
 def _resolve_order(storyline):
-    """Ordered node-id list to export: follow the active connections from the
+    """Ordered node-id list to export: follow the linear connections from the
     storyline's 线头 id, expanding volume ids to their chapters."""
     from . import connection_store, volume_store
 
     vol_chapters = {v["id"]: (v.get("chapters") or []) for v in volume_store.list_volumes()}
     by_from = {}
     for c in connection_store.list_connections():
-        if c.get("active"):
-            by_from.setdefault(c.get("from"), []).append(c.get("to"))
+        by_from.setdefault(c.get("from"), []).append(c.get("to"))
 
     order = []
     cur = storyline.get("id")

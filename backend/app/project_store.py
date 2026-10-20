@@ -12,6 +12,7 @@ RELATIONS_FILE = "relations.json"
 WHITEBOARD_FILE = "whiteboard.json"
 RELATIONS_BOARD_FILE = "relations-board.json"
 CONNECTIONS_FILE = "connections.json"
+TRASH_FILE = "trash.json"
 NODES_DIR = "nodes"
 EXPORT_SETTINGS_FILE = "export-settings.json"
 
@@ -130,6 +131,7 @@ def create_project(path, name):
     write_json_file(WHITEBOARD_FILE, {"items": []})
     write_json_file(RELATIONS_BOARD_FILE, {"items": []})
     write_json_file(CONNECTIONS_FILE, {"connections": []})
+    write_json_file(TRASH_FILE, {"trash": []})
     write_json_file(EXPORT_SETTINGS_FILE, dict(DEFAULT_EXPORT_SETTINGS))
     from . import recent_store
 
@@ -143,6 +145,7 @@ def open_project(path):
         raise ProjectError("该路径不是有效项目（缺少 project.json）")
     set_current(path)
     _migrate_legacy()
+    _migrate_connections_linear()
     data = load_project()
     from . import recent_store
 
@@ -172,6 +175,24 @@ def touch_project():
     project = read_json_file(PROJECT_FILE, {})
     project["updatedAt"] = _now()
     write_json_file(PROJECT_FILE, project)
+
+
+def _migrate_connections_linear():
+    """Remove branching from connections (idempotent).
+
+    Collapses multiple outgoing connections per node down to one (keeping the
+    previously-active branch), and drops the legacy ``active`` field.
+    """
+    raw = read_json_file(CONNECTIONS_FILE, {"connections": []}).get("connections", [])
+    by_from = {}
+    for c in raw:
+        if c.get("from") and c.get("to"):
+            by_from.setdefault(c.get("from"), []).append(c)
+    normalized = []
+    for group in by_from.values():
+        keep = next((c for c in group if c.get("active")), group[0])
+        normalized.append({"id": keep.get("id"), "from": keep.get("from"), "to": keep.get("to")})
+    write_json_file(CONNECTIONS_FILE, {"connections": normalized})
 
 
 def _migrate_legacy():

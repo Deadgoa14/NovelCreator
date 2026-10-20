@@ -2,6 +2,7 @@ import { useEffect } from 'react'
 import { api } from './api'
 import { useStore } from './store'
 import { useSettings } from './settings'
+import { recentlyEdited } from './editSync'
 import { ProjectGate } from './components/ProjectGate'
 import { DialogProvider } from './components/Dialog'
 import { Sidebar } from './components/Sidebar'
@@ -16,6 +17,9 @@ import { SettingsPage } from './pages/SettingsPage'
 import { AiSettingsPage } from './pages/AiSettingsPage'
 import { RawAnalysisPage } from './pages/RawAnalysisPage'
 import { MdImportPage } from './pages/MdImportPage'
+import { TxtImportPage } from './pages/TxtImportPage'
+import { TrashPage } from './pages/TrashPage'
+import { TtsPage } from './pages/TtsPage'
 
 export default function App() {
   const ready = useStore((s) => s.ready)
@@ -48,6 +52,41 @@ export default function App() {
     }
   }, [currentNodeId, setCurrentNode])
 
+  // Sync: poll the current node so edits made on another device (e.g. phone) show up
+  // here. Skipped while an editor/input is focused, to avoid clobbering local typing.
+  useEffect(() => {
+    if (!currentNodeId) return
+    const id = setInterval(async () => {
+      if (recentlyEdited()) return // 刚编辑过，跳过以免覆盖未保存的修改
+      const active = document.activeElement as HTMLElement | null
+      if (
+        active &&
+        (active.tagName === 'INPUT' ||
+          active.tagName === 'TEXTAREA' ||
+          active.isContentEditable ||
+          active.closest?.('.cm-editor'))
+      ) {
+        return
+      }
+      try {
+        const n = await api.getNode(currentNodeId)
+        const cur = useStore.getState().currentNode
+        const nextBeats = n.meta.beats ?? []
+        const changed =
+          !cur ||
+          cur.title !== (n.meta.title ?? '') ||
+          JSON.stringify(cur.beats ?? []) !== JSON.stringify(nextBeats) ||
+          JSON.stringify(cur.questions ?? []) !== JSON.stringify(n.meta.questions ?? [])
+        if (changed) {
+          setCurrentNode({ id: n.id, title: n.meta.title ?? '', beats: nextBeats, questions: n.meta.questions ?? [] })
+        }
+      } catch {
+        /* ignore */
+      }
+    }, 2000)
+    return () => clearInterval(id)
+  }, [currentNodeId, setCurrentNode])
+
   // Heartbeat so the local server can auto-exit once this page is closed.
   useEffect(() => {
     api.heartbeat().catch(() => {})
@@ -70,6 +109,9 @@ export default function App() {
           <div className="w-[58%] min-w-[360px] border-r border-gray-200 dark:border-gray-700 overflow-hidden flex flex-col">
             {activePage === 'raw' && <RawAnalysisPage />}
             {activePage === 'mdimport' && <MdImportPage />}
+            {activePage === 'txtimport' && <TxtImportPage />}
+            {activePage === 'trash' && <TrashPage />}
+            {activePage === 'tts' && <TtsPage />}
             {activePage === 'ai' && <AiSettingsPage />}
             {activePage === 'nodes' && <NodesPage />}
             {activePage === 'whiteboard' && <WhiteboardPage />}

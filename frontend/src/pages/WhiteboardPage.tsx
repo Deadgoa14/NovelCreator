@@ -259,6 +259,8 @@ export function WhiteboardPage() {
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set())
   const [collapsedVolumes, setCollapsedVolumes] = useState<Set<string>>(new Set())
   const [flowNodes, setFlowNodes, onNodesChangeRaw] = useNodesState<FlowNode>([])
+  const rfInstanceRef = useRef<any>(null)
+  const rfWrapperRef = useRef<HTMLDivElement | null>(null)
   const { alert, confirm, prompt } = useDialog()
 
   const activeLine = storylines.find((s) => s.id === activeLineId) ?? storylines[0] ?? null
@@ -281,7 +283,7 @@ export function WhiteboardPage() {
       while (cur && !seen.has(cur)) {
         seen.add(cur)
         if (cur !== sl.id) steps.push(cur)
-        const out = connections.find((c) => c.from === cur && c.active)
+        const out = connections.find((c) => c.from === cur)
         cur = out ? out.to : null
       }
       m.set(sl.id, steps)
@@ -296,7 +298,7 @@ export function WhiteboardPage() {
     const seen = new Set<string>()
     while (cur && !seen.has(cur)) {
       seen.add(cur)
-      const out = connections.find((c) => c.from === cur && c.active)
+      const out = connections.find((c) => c.from === cur)
       if (!out) break
       edges.add(out.id)
       cur = out.to
@@ -341,7 +343,7 @@ export function WhiteboardPage() {
           return {
             id: n.id,
             type: 'plotNode',
-            position: old?.position ?? nodePos.get(n.id) ?? { x: (i % 4) * 230 + 40, y: Math.floor(i / 4) * 160 + 40 },
+            position: old?.position ?? nodePos.get(n.id) ?? { x: i * 230 + 40, y: 40 },
             data: { label: n.title || '未命名节点', color: nodeColor(n.id), count: storylineOf(n.id).length, beats: n.beats ?? [], expanded: expandedIds.has(n.id) },
           } as FlowNode
         })
@@ -433,13 +435,9 @@ export function WhiteboardPage() {
         source,
         target,
         animated: onActive,
-        markerEnd: { type: MarkerType.ArrowClosed, color: c.active ? stroke : '#9ca3af' },
-        data: { connId: c.id, from: c.from, to: c.to, active: c.active, onActive },
-        style: {
-          stroke: c.active ? stroke : '#9ca3af',
-          strokeWidth: c.active ? 2 : 1.5,
-          ...(c.active ? {} : { strokeDasharray: '4 4' }),
-        },
+        markerEnd: { type: MarkerType.ArrowClosed, color: stroke },
+        data: { connId: c.id, from: c.from, to: c.to, onActive },
+        style: { stroke, strokeWidth: onActive ? 2 : 1.5 },
       })
     }
 
@@ -480,8 +478,22 @@ export function WhiteboardPage() {
     patchConnections((await api.getConnections()).connections)
   }
 
+  function viewportCenter(): Point | null {
+    const instance = rfInstanceRef.current
+    const wrapper = rfWrapperRef.current
+    if (!instance?.getViewport || !wrapper) return null
+    const rect = wrapper.getBoundingClientRect()
+    const vp = instance.getViewport()
+    return { x: (rect.width / 2 - vp.x) / vp.zoom, y: (rect.height / 2 - vp.y) / vp.zoom }
+  }
+
   async function createNode() {
     const n = await api.createNode()
+    const center = viewportCenter()
+    if (center) {
+      patchWhiteboard([...whiteboard.filter((w) => !(w.type === 'node' && w.nodeId === n.id)), { type: 'node', nodeId: n.id, position: center }])
+      api.setNodePosition(n.id, center).catch(() => {})
+    }
     await refreshNodes()
     setCurrentNodeId(n.id)
   }
@@ -525,7 +537,13 @@ export function WhiteboardPage() {
   async function addVolume() {
     const name = await prompt('卷名称', `卷 ${volumes.length + 1}`)
     if (!name) return
-    await api.createVolume(name)
+    const v = await api.createVolume(name)
+    const center = viewportCenter()
+    if (center) {
+      patchWhiteboard([...whiteboard.filter((w) => !(w.type === 'volume' && w.volumeId === v.id)), { type: 'volume', volumeId: v.id, position: center }])
+      api.setVolumePosition(v.id, center).catch(() => {})
+    }
+    setCollapsedVolumes((prev) => new Set(prev).add(v.id))
     await refreshVolumes()
   }
 
@@ -577,10 +595,6 @@ export function WhiteboardPage() {
     } catch (e) {
       await alert(errorMessage(e))
     }
-  }
-  async function switchBranch(connId: string) {
-    await api.setConnectionActive(connId)
-    await refreshConnections()
   }
   async function removeConnection(connId: string) {
     await api.deleteConnection(connId)
@@ -713,9 +727,32 @@ export function WhiteboardPage() {
     setExpandedIds(allExpanded ? new Set() : new Set(nodes.map((n) => n.id)))
   }
 
+  async function autoLayout() {
+    const flat: string[] = []
+    for (const id of activeChainSteps) {
+      const vol = volById.get(id)
+      if (vol) flat.push(...(vol.chapters ?? []))
+      else flat.push(id)
+    }
+    const target = flat.length ? flat : [...nodes].sort((a, b) => a.order - b.order).map((n) => n.id)
+    if (!target.length) {
+      await alert('没有剧情节点')
+      return
+    }
+    const spacing = 320
+    const y = 40
+    const posMap = new Map(target.map((id, i) => [id, { x: 40 + i * spacing, y }]))
+    const chainSet = new Set(target)
+    const other = whiteboard.filter((w) => !(w.type === 'node' && chainSet.has(w.nodeId)))
+    const added = target.map((id) => ({ type: 'node' as const, nodeId: id, position: posMap.get(id)! }))
+    patchWhiteboard([...other, ...added])
+    // 直接更新 flowNodes，否则 useNodesState 里保留的旧位置会优先于新位置，导致不生效
+    setFlowNodes((current) => current.map((n) => (posMap.has(n.id) ? { ...n, position: posMap.get(n.id)! } : n)))
+    target.forEach((id) => api.setNodePosition(id, posMap.get(id)!).catch(() => {}))
+  }
+
   const edgeForMenu = menu?.kind === 'edge' ? edges.find((e) => e.id === menu.edgeId) : undefined
-  const edgeData = edgeForMenu?.data as { connId?: string; from?: string; to?: string; active?: boolean; onActive?: boolean; containment?: boolean; source?: string; target?: string } | undefined
-  const canSwitch = !!edgeData?.connId && (connections.filter((c) => c.from === edgeData.from).length > 1)
+  const edgeData = edgeForMenu?.data as { connId?: string; from?: string; to?: string; onActive?: boolean; containment?: boolean; source?: string; target?: string } | undefined
   const containmentTarget = edgeData?.containment && edgeData.target && !isTerminal(edgeData.target) ? edgeData.target : null
   const containmentTitle = containmentTarget ? nodes.find((n) => n.id === containmentTarget)?.title : null
   const nodeVolOfMenu = menu?.kind === 'node' ? volumes.find((v) => (v.chapters ?? []).includes(menu.nodeId)) : undefined
@@ -762,15 +799,16 @@ export function WhiteboardPage() {
           </div>
         )}
         <div className="mt-1.5 text-[11px] text-gray-400">
-          从「出」拖到「入」建立「A 在 B 之前」约束；从线头拖到章节开始一条故事线；左键拖空白=框选多节点，按住空格拖=平移画布；右键连线可切换分支/断开。
+          从「出」拖到「入」建立「A 在 B 之前」约束；从线头拖到章节开始一条故事线；左键拖空白=框选多节点，中键拖=平移画布；右键连线可断开。
         </div>
       </div>
 
-      <div className="flex-1 relative">
+      <div className="flex-1 relative" ref={rfWrapperRef}>
         <ReactFlow
           nodes={flowNodes}
           edges={edges}
           nodeTypes={nodeTypes}
+          onInit={(instance) => { rfInstanceRef.current = instance }}
           onNodesChange={onNodesChange}
           onConnect={onConnect}
           onNodeClick={onNodeClick}
@@ -795,15 +833,16 @@ export function WhiteboardPage() {
           }}
           onPaneClick={() => setMenu(null)}
           selectionOnDrag
-          panOnDrag={false}
-          panActivationKeyCode="Space"
+          panOnDrag={[1]}
+          panActivationKeyCode={null}
+          minZoom={0.1}
           fitView
         >
           <Background gap={20} />
           <Controls position="bottom-right" />
         </ReactFlow>
 
-        <div className="absolute bottom-4 left-4 z-10">
+        <div className="absolute bottom-4 left-4 z-10 flex items-center gap-2">
           <button
             onClick={toggleAllExpanded}
             className={`px-3 py-1.5 text-xs rounded-md shadow-md border transition-colors ${
@@ -812,6 +851,13 @@ export function WhiteboardPage() {
             title="展开/闭合所有节点的梗概"
           >
             {allExpanded ? '闭合全部梗概' : '展开全部梗概'}
+          </button>
+          <button
+            onClick={autoLayout}
+            className="px-3 py-1.5 text-xs rounded-md shadow-md border bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700"
+            title="把当前故事线执行链上的剧情节点按顺序横向排成一排"
+          >
+            自动排版
           </button>
         </div>
 
@@ -864,12 +910,7 @@ export function WhiteboardPage() {
                     <span className="block w-full text-left px-4 py-1.5 text-gray-400 dark:text-gray-500">卷边界</span>
                   )
                 ) : (
-                  <>
-                    {canSwitch && (
-                      <button onClick={() => { switchBranch(edgeData.connId!); setMenu(null) }} className="block w-full text-left px-4 py-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 dark:text-gray-200">切换分支</button>
-                    )}
-                    <button onClick={() => { removeConnection(edgeData.connId!); setMenu(null) }} className="block w-full text-left px-4 py-1.5 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/30">断开连线</button>
-                  </>
+                  <button onClick={() => { removeConnection(edgeData.connId!); setMenu(null) }} className="block w-full text-left px-4 py-1.5 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/30">断开连线</button>
                 )}
               </>
             )}

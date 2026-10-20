@@ -21,6 +21,7 @@ DEFAULTS = {
     "baseURL": "https://api.deepseek.com/v1",
     "apiKey": "",
     "model": "deepseek-chat",
+    "economyModel": "",
 }
 
 
@@ -122,12 +123,12 @@ def _chat_anthropic(base, model, api_key, messages, temperature, max_tokens):
     return content, usage
 
 
-def chat(messages, *, temperature=0.7, max_tokens=2048):
+def chat(messages, *, temperature=0.7, max_tokens=2048, model=None):
     cfg = get_config()
     if not (cfg.get("apiKey") or "").strip():
         raise ps.ProjectError("请先在「设置 → AI」里配置 API Key")
     base = (cfg.get("baseURL") or "").rstrip("/")
-    model = cfg.get("model") or ""
+    model = model or cfg.get("model") or ""
     api_key = cfg.get("apiKey") or ""
     # DeepSeek's Anthropic-compatible endpoint (and other Anthropic-style
     # services) use the Messages API; everything else uses chat/completions.
@@ -206,9 +207,9 @@ def _extract_json(text, unwrap=True):
     raise ps.ProjectError("AI 返回中没有可解析的 JSON，请重试")
 
 
-def _ask_json(messages, *, temperature=0.3, max_tokens=4096, unwrap=True):
+def _ask_json(messages, *, temperature=0.3, max_tokens=4096, unwrap=True, model=None):
     """chat() then tolerant JSON extraction, with one corrective retry on failure."""
-    raw = chat(messages, temperature=temperature, max_tokens=max_tokens)
+    raw = chat(messages, temperature=temperature, max_tokens=max_tokens, model=model)
     try:
         return _extract_json(raw, unwrap=unwrap)
     except ps.ProjectError:
@@ -216,7 +217,7 @@ def _ask_json(messages, *, temperature=0.3, max_tokens=4096, unwrap=True):
             {"role": "assistant", "content": raw},
             {"role": "user", "content": "上面的输出无法解析成 JSON。请重新只输出一个纯 JSON（不要代码块、不要任何解释文字）。"},
         ]
-        raw2 = chat(retry, temperature=temperature, max_tokens=max_tokens)
+        raw2 = chat(retry, temperature=temperature, max_tokens=max_tokens, model=model)
         return _extract_json(raw2, unwrap=unwrap)
 
 
@@ -307,7 +308,8 @@ def summarize_beats(text, chunk_chars=1000):
             ),
         },
     ]
-    data = _ask_json(messages, temperature=0.4, max_tokens=4096)
+    econ = (get_config().get("economyModel") or "").strip()
+    data = _ask_json(messages, temperature=0.4, max_tokens=4096, model=econ or None)
     if not isinstance(data, list):
         raise ps.ProjectError("AI 返回格式错误，请重试")
     beats = []

@@ -8,7 +8,37 @@ import { uid } from '../util'
 import { launchContinue, launchExtract, launchPolish, launchProofread, launchSummarize } from '../aiTasks'
 import { CodeBodyEditor } from './CodeBodyEditor'
 import { useDialog } from './Dialog'
+import { speakText, pauseSpeech, resumeSpeech, stopSpeech, useTts } from '../ttsStore'
+import { markEdit } from '../editSync'
 import type { Beat, Question, Volume } from '../types'
+
+function TtsPlayer() {
+  const status = useTts((s) => s.status)
+  const charIndex = useTts((s) => s.charIndex)
+  const totalChars = useTts((s) => s.totalChars)
+  if (status === 'idle') return null
+  const progress = totalChars > 0 ? Math.min(1, charIndex / totalChars) : 0
+  return (
+    <div className="px-4 py-2 border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
+      <div className="flex items-center gap-3">
+        <button
+          onClick={status === 'speaking' ? pauseSpeech : resumeSpeech}
+          className="text-base leading-none text-gray-600 dark:text-gray-300 hover:text-blue-600"
+          title={status === 'speaking' ? '暂停' : '继续'}
+        >
+          {status === 'speaking' ? '⏸' : '▶'}
+        </button>
+        <button onClick={stopSpeech} className="text-base leading-none text-gray-600 dark:text-gray-300 hover:text-red-500" title="停止">
+          ⏹
+        </button>
+        <div className="flex-1 h-1.5 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+          <div className="h-full bg-blue-500 transition-all" style={{ width: `${progress * 100}%` }} />
+        </div>
+        <span className="text-[11px] text-gray-400 whitespace-nowrap">{Math.round(progress * 100)}%</span>
+      </div>
+    </div>
+  )
+}
 
 // Shared non-exported-text styling: italic + reduced opacity.
 const nonExportCls = 'italic opacity-60'
@@ -25,7 +55,7 @@ export function EditorPane() {
   const focusBeat = useStore((s) => s.focusBeat)
   const setActivePage = useStore((s) => s.setActivePage)
   const requestNewConcept = useStore((s) => s.requestNewConcept)
-  const { previewFontFamily, previewFontSize, previewTextBg, previewMarginBg, theme, summarizeChars } = useSettings()
+  const { previewFontFamily, previewFontSize, previewTextBg, previewMarginBg, theme, summarizeChars, trashMax } = useSettings()
   const textColor = theme === 'dark' ? '#e5e7eb' : '#1f2937'
   const summaryColor = theme === 'dark' ? '#d1d5db' : '#4b5563'
 
@@ -39,6 +69,7 @@ export function EditorPane() {
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
   const [notePick, setNotePick] = useState<{ beatIndex: number; notes: string[] } | null>(null)
   const [resolving, setResolving] = useState(false)
+  const ttsStatus = useTts((s) => s.status)
   const { alert } = useDialog()
 
   const selectedVolume: Volume | null = volumes.find((v) => v.id === currentVolumeId) ?? null
@@ -67,6 +98,7 @@ export function EditorPane() {
   }, [currentNodeId])
 
   function scheduleSave(patch: { title?: string; beats?: Beat[]; questions?: Question[] }) {
+    markEdit()
     pendingRef.current = { ...pendingRef.current, ...patch }
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
     saveTimerRef.current = setTimeout(async () => {
@@ -80,6 +112,7 @@ export function EditorPane() {
 
   function scheduleVolumeSave(patch: Partial<Volume>) {
     if (!currentVolumeId) return
+    markEdit()
     volPendingRef.current = { ...volPendingRef.current, ...patch }
     patchVolumes(volumes.map((v) => (v.id === currentVolumeId ? { ...v, ...patch } : v)))
     if (volTimerRef.current) clearTimeout(volTimerRef.current)
@@ -143,6 +176,17 @@ export function EditorPane() {
     return (currentNode?.beats ?? []).map((b) => (b.text || '') + '\n' + (b.body || '')).join('\n')
   }
 
+  // ----- TTS (browser speech synthesis) -----
+  function speakBody() {
+    const text = (currentNode?.beats ?? []).map((b) => b.body ?? '').filter((s) => s.trim()).join('\n')
+    speakText(text)
+  }
+
+  // Stop speech when switching nodes.
+  useEffect(() => {
+    stopSpeech()
+  }, [currentNodeId])
+
   function onContinue(index: number) {
     const notes = currentNode?.beats?.[index]?.notes ?? []
     if (!notes.length) {
@@ -160,6 +204,10 @@ export function EditorPane() {
   function registerText(type: 'character' | 'generic', text: string) {
     setActivePage(type === 'character' ? 'characters' : 'concepts')
     requestNewConcept(type, text)
+  }
+
+  function trashText(beatId: string, text: string) {
+    api.addTrash(text, currentNodeId ?? '', beatId, trashMax).catch(() => {})
   }
 
   async function resolveQuestions() {
@@ -221,6 +269,7 @@ export function EditorPane() {
         </div>
       </div>
 
+      <TtsPlayer />
       <div className="px-4 py-2 border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
         <span className="text-xs text-gray-400">
           正文中出现的概念会<span className="font-medium" style={{ color: '#e6194b' }}>彩色高亮</span>；斜体浅色 = 仅预览、不导出
@@ -260,6 +309,7 @@ export function EditorPane() {
             textColor={textColor}
             placeholder="一首诗、一段引子…（换行即分段）"
             onRegister={registerText}
+            onTrash={(text) => api.addTrash(text, '', '', trashMax).catch(() => {})}
           />
         </section>
       </>
@@ -319,6 +369,7 @@ export function EditorPane() {
                   beatTextRefs.current[b.id] = view
                 }}
                 onRegister={registerText}
+                onTrash={(text) => trashText(b.id, text)}
               />
               <button onClick={() => removeBeat(i)} className="text-gray-300 hover:text-red-500 text-sm shrink-0" title="删除条目">
                 ✕
@@ -365,6 +416,7 @@ export function EditorPane() {
                   textColor={textColor}
                   placeholder="在这里写正文，换行即分段…"
                   onRegister={registerText}
+                  onTrash={(text) => trashText(b.id, text)}
                 />
                 <div className="mt-1 flex items-center justify-end gap-3">
                   {!((b.body ?? '').trim()) && (
@@ -470,7 +522,29 @@ export function EditorPane() {
       {beats.every((b) => collapsed.has(b.id)) ? '全部展开' : '全部折叠'}
     </button>
   ) : null
-  return shell(<span title={currentNode!.title}>{currentNode!.title || '未命名节点'}</span>, body, foldAction)
+  const speechAction = (
+    <>
+      {ttsStatus === 'idle' && (
+        <button onClick={speakBody} className="px-2.5 py-1 text-xs rounded-md border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 whitespace-nowrap">🔊 朗读</button>
+      )}
+      {ttsStatus === 'speaking' && (
+        <button onClick={pauseSpeech} className="px-2.5 py-1 text-xs rounded-md border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 whitespace-nowrap">⏸ 暂停</button>
+      )}
+      {ttsStatus === 'paused' && (
+        <button onClick={resumeSpeech} className="px-2.5 py-1 text-xs rounded-md border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 whitespace-nowrap">▶ 继续</button>
+      )}
+      {ttsStatus !== 'idle' && (
+        <button onClick={stopSpeech} className="px-2.5 py-1 text-xs rounded-md border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 whitespace-nowrap">⏹ 停止</button>
+      )}
+    </>
+  )
+  const headerAction = (
+    <div className="flex items-center gap-2">
+      {foldAction}
+      {speechAction}
+    </div>
+  )
+  return shell(<span title={currentNode!.title}>{currentNode!.title || '未命名节点'}</span>, body, headerAction)
 }
 
 function NotesPickModal({

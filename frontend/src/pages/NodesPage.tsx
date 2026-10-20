@@ -28,6 +28,8 @@ export function NodesPage() {
   const [aiBusy, setAiBusy] = useState(false)
   const [query, setQuery] = useState('')
   const [exportOpen, setExportOpen] = useState(false)
+  const [dragNodeId, setDragNodeId] = useState<string | null>(null)
+  const [dragBeat, setDragBeat] = useState<{ nodeId: string; index: number } | null>(null)
   const { confirm, alert } = useDialog()
 
   // Nodes ordered by ``order``, with volume separators inserted at membership
@@ -85,6 +87,11 @@ export function NodesPage() {
 
   async function createNode() {
     const n = await api.createNode()
+    const sorted = [...nodes].sort((a, b) => a.order - b.order || a.id.localeCompare(b.id)).map((x) => x.id)
+    const curIdx = sorted.indexOf(currentNodeId ?? '')
+    const insertAt = curIdx === -1 ? sorted.length : curIdx + 1
+    sorted.splice(insertAt, 0, n.id)
+    await api.reorderNodes(sorted)
     await refreshNodes()
     setCurrentNodeId(n.id)
     setCurrentVolumeId(null)
@@ -163,6 +170,60 @@ export function NodesPage() {
     const [it] = next.splice(pos, 1)
     next.splice(target, 0, it)
     patchNodes(await api.reorderNodes(next.map((n) => n.id)))
+  }
+
+  async function moveBeat(nodeId: string, beatIndex: number, dir: -1 | 1) {
+    const n = await api.getNode(nodeId)
+    const beats = [...(n.meta.beats ?? [])]
+    const target = beatIndex + dir
+    if (target < 0 || target >= beats.length) return
+    const [b] = beats.splice(beatIndex, 1)
+    beats.splice(target, 0, b)
+    await api.updateNode(nodeId, { beats })
+    patchNodes(await api.listNodes())
+    if (useStore.getState().currentNodeId === nodeId) {
+      patchCurrentNode({ beats })
+    }
+  }
+
+  async function dropNodeOnto(targetId: string) {
+    if (!dragNodeId || dragNodeId === targetId) {
+      setDragNodeId(null)
+      return
+    }
+    const sorted = [...nodes].sort((a, b) => a.order - b.order || a.id.localeCompare(b.id)).map((x) => x.id)
+    const from = sorted.indexOf(dragNodeId)
+    let to = sorted.indexOf(targetId)
+    if (from === -1 || to === -1) {
+      setDragNodeId(null)
+      return
+    }
+    const next = [...sorted]
+    next.splice(from, 1)
+    if (from < to) to -= 1
+    next.splice(to, 0, dragNodeId)
+    patchNodes(await api.reorderNodes(next))
+    setDragNodeId(null)
+  }
+
+  async function dropBeatOnto(nodeId: string, targetIndex: number) {
+    if (!dragBeat || dragBeat.nodeId !== nodeId || dragBeat.index === targetIndex) {
+      setDragBeat(null)
+      return
+    }
+    const n = await api.getNode(nodeId)
+    const beats = [...(n.meta.beats ?? [])]
+    const from = dragBeat.index
+    let to = targetIndex
+    const [b] = beats.splice(from, 1)
+    if (from < to) to -= 1
+    beats.splice(to, 0, b)
+    await api.updateNode(nodeId, { beats })
+    patchNodes(await api.listNodes())
+    if (useStore.getState().currentNodeId === nodeId) {
+      patchCurrentNode({ beats })
+    }
+    setDragBeat(null)
   }
 
   return (
@@ -245,6 +306,16 @@ export function NodesPage() {
           return (
             <div
               key={it.id}
+              draggable
+              onDragStart={(e) => {
+                setDragNodeId(it.id)
+                e.dataTransfer.effectAllowed = 'move'
+              }}
+              onDragOver={(e) => e.preventDefault()}
+              onDrop={(e) => {
+                e.preventDefault()
+                dropNodeOnto(it.id)
+              }}
               className={`border-l-2 transition-colors ${it.indented ? 'ml-6' : ''} ${
                 it.id === currentNodeId && !currentVolumeId
                   ? 'bg-blue-50 dark:bg-blue-900/30 border-blue-500'
@@ -311,6 +382,16 @@ export function NodesPage() {
                   {it.beats.map((b, bi) => (
                     <div
                       key={b.id}
+                      draggable
+                      onDragStart={(e) => {
+                        setDragBeat({ nodeId: it.id, index: bi })
+                        e.dataTransfer.effectAllowed = 'move'
+                      }}
+                      onDragOver={(e) => e.preventDefault()}
+                      onDrop={(e) => {
+                        e.preventDefault()
+                        dropBeatOnto(it.id, bi)
+                      }}
                       className="group/beat flex items-center gap-1 rounded bg-gray-100 dark:bg-gray-800 hover:bg-blue-50 dark:hover:bg-blue-900/30"
                     >
                       <button
@@ -326,16 +407,38 @@ export function NodesPage() {
                         <span className="text-gray-400 dark:text-gray-500 mr-1.5">{bi + 1}.</span>
                         <span className="break-words">{b.text || '（空）'}</span>
                       </button>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          deleteBeat(it.id, b.id)
-                        }}
-                        className="opacity-0 group-hover/beat:opacity-100 text-gray-400 hover:text-red-500 text-xs px-1.5 shrink-0"
-                        title="删除梗概"
-                      >
-                        ✕
-                      </button>
+                      <span className="flex items-center gap-0.5 opacity-0 group-hover/beat:opacity-100 shrink-0">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            moveBeat(it.id, bi, -1)
+                          }}
+                          className="text-gray-400 hover:text-blue-600 disabled:opacity-30 text-xs px-0.5"
+                          title="上移"
+                        >
+                          ↑
+                        </button>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            moveBeat(it.id, bi, 1)
+                          }}
+                          className="text-gray-400 hover:text-blue-600 disabled:opacity-30 text-xs px-0.5"
+                          title="下移"
+                        >
+                          ↓
+                        </button>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            deleteBeat(it.id, b.id)
+                          }}
+                          className="text-gray-400 hover:text-red-500 text-xs px-1"
+                          title="删除梗概"
+                        >
+                          ✕
+                        </button>
+                      </span>
                     </div>
                   ))}
                 </div>

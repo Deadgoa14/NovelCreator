@@ -40,17 +40,18 @@ export interface Relation {
   targetHandle?: string
 }
 
-export interface StorylineEdge {
-  from: string
-  to: string
-  active: boolean
-}
-
 export interface Connection {
   id: string
   from: string
   to: string
-  active: boolean
+}
+
+export interface TrashEntry {
+  id: string
+  text: string
+  nodeId: string
+  beatId: string
+  createdAt: string
 }
 
 export interface Storyline {

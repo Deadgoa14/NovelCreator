@@ -66,7 +66,7 @@ function StatCard({ label, value, accent }: { label: string; value: string; acce
 
 export function AiSettingsPage() {
   const { alert, confirm } = useDialog()
-  const [ai, setAi] = useState<AiConfig>({ baseURL: '', apiKey: '', model: '' })
+  const [ai, setAi] = useState<AiConfig>({ baseURL: '', apiKey: '', model: '', economyModel: '' })
   const [showKey, setShowKey] = useState(false)
   const [savingAi, setSavingAi] = useState(false)
   const [usage, setUsage] = useState<AiUsage | null>(null)
@@ -178,6 +178,15 @@ export function AiSettingsPage() {
               value={ai.model}
               onChange={(e) => setAi({ ...ai, model: e.target.value })}
               placeholder="deepseek-chat"
+            />
+          </Row>
+
+          <Row label="经济模型（梗概划分等轻任务，留空则用主模型）">
+            <input
+              className={inputCls}
+              value={ai.economyModel}
+              onChange={(e) => setAi({ ...ai, economyModel: e.target.value })}
+              placeholder="例如 deepseek-chat / gpt-4o-mini"
             />
           </Row>
 

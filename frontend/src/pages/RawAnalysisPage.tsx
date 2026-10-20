@@ -138,7 +138,7 @@ export function RawAnalysisPage() {
         const seen = new Set<string>()
         while (tail && !seen.has(tail)) {
           seen.add(tail)
-          const out = conns.find((c) => c.from === tail && c.active)
+          const out = conns.find((c) => c.from === tail)
           if (!out) break
           tail = out.to
         }

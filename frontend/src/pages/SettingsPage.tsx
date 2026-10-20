@@ -167,6 +167,19 @@ export function SettingsPage() {
           </Row>
         </Section>
 
+        <Section title="废纸篓">
+          <Row label="最多保留的删除次数（上限 50）">
+            <input
+              type="number"
+              min={1}
+              max={50}
+              value={s.trashMax}
+              onChange={(e) => s.set({ trashMax: Math.min(50, Math.max(1, Number(e.target.value) || 20)) })}
+              className="w-20 text-sm border border-gray-300 rounded-md px-2 py-1.5 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-100"
+            />
+          </Row>
+        </Section>
+
         <Section title="故事线白板">
           <Row label="默认发展顺序">
             <select

@@ -17,6 +17,7 @@ from . import (
     recent_store,
     rename as rename_mod,
     storyline_store,
+    trash_store,
     usage_store,
     volume_store,
 )
@@ -92,6 +93,13 @@ class ConnectionReq(BaseModel):
     model_config = {"populate_by_name": True}
 
 
+class TrashReq(BaseModel):
+    text: str = ""
+    nodeId: str = ""
+    beatId: str = ""
+    max: int = 20
+
+
 class VolumeReq(BaseModel):
     name: Optional[str] = None
     intro: Optional[str] = None
@@ -130,6 +138,7 @@ class AiConfigReq(BaseModel):
     baseURL: str = ""
     apiKey: str = ""
     model: str = ""
+    economyModel: str = ""
 
 
 class AiTextReq(BaseModel):
@@ -409,8 +418,11 @@ def get_connections():
 
 @router.post("/connections")
 def create_connection(req: ConnectionReq):
-    conn = connection_store.create_connection(req.source, req.target)
-    return conn if conn else {"ok": True}
+    try:
+        conn = connection_store.create_connection(req.source, req.target)
+        return conn if conn else {"ok": True}
+    except ps.ProjectError as e:
+        raise _http(e)
 
 
 @router.delete("/connections/{conn_id}")
@@ -418,12 +430,25 @@ def delete_connection(conn_id: str):
     return connection_store.delete_connection(conn_id)
 
 
-@router.put("/connections/{conn_id}/active")
-def set_connection_active(conn_id: str):
-    try:
-        return connection_store.set_active(conn_id)
-    except ps.ProjectError as e:
-        raise _http(e)
+# ---------------------------------------------------------------- trash
+@router.get("/trash")
+def get_trash():
+    return {"trash": trash_store.list_trash()}
+
+
+@router.post("/trash")
+def add_trash(req: TrashReq):
+    return {"trash": trash_store.add_trash(req.text, req.nodeId, req.beatId, req.max)}
+
+
+@router.delete("/trash/{trash_id}")
+def delete_trash(trash_id: str):
+    return trash_store.delete_trash(trash_id)
+
+
+@router.post("/trash/clear")
+def clear_trash():
+    return trash_store.clear_trash()
 
 
 # ---------------------------------------------------------------- relations

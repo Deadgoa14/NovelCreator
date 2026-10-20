@@ -21,6 +21,9 @@ export interface Settings {
   conceptHighlightStyle: HighlightStyle
   plotNodeColor: string
   volumeNodeColor: string
+  trashMax: number
+  ttsRate: number
+  ttsVoice: string
   set: (patch: Partial<Omit<Settings, 'set'>>) => void
 }
 
@@ -56,6 +59,9 @@ export const useSettings = create<Settings>()(
       conceptHighlightStyle: 'both',
       plotNodeColor: '#000000',
       volumeNodeColor: '#6b7280',
+      trashMax: 20,
+      ttsRate: 1,
+      ttsVoice: '',
       set: (patch) => set(patch),
     }),
     { name: 'ddgame-settings' },

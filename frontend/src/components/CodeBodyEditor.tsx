@@ -56,6 +56,7 @@ interface Props {
   className?: string
   onReady?: (view: EditorView) => void
   onRegister?: (type: 'character' | 'generic', text: string) => void
+  onTrash?: (text: string) => void
 }
 
 /** CodeMirror-backed 正文/梗概 editor: stable editing (IME/caret/undo) plus live
@@ -71,6 +72,7 @@ export function CodeBodyEditor({
   className,
   onReady,
   onRegister,
+  onTrash,
 }: Props) {
   const hostRef = useRef<HTMLDivElement | null>(null)
   const viewRef = useRef<EditorView | null>(null)
@@ -226,6 +228,14 @@ export function CodeBodyEditor({
     setMenu(null)
   }
 
+  function trashSel() {
+    if (!menu) return
+    const view = viewRef.current
+    view?.dispatch(view.state.replaceSelection(''))
+    onTrash?.(menu.text)
+    setMenu(null)
+  }
+
   return (
     <>
       <div ref={hostRef} className={className ?? 'w-full'} onContextMenu={onContextMenu} />
@@ -238,6 +248,7 @@ export function CodeBodyEditor({
           <button onClick={copySel} className="block w-full text-left px-4 py-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 dark:text-gray-200">复制</button>
           <button onClick={cutSel} className="block w-full text-left px-4 py-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 dark:text-gray-200">剪切</button>
           <button onClick={pasteAt} className="block w-full text-left px-4 py-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 dark:text-gray-200">粘贴</button>
+          <button onClick={trashSel} className="block w-full text-left px-4 py-1.5 hover:bg-red-50 dark:hover:bg-red-900/30 text-red-600 dark:text-red-300">移动到废纸篓</button>
           <div className="border-t border-gray-200 dark:border-gray-700 my-1" />
           <button onClick={() => register('generic')} className="block w-full text-left px-4 py-1.5 hover:bg-blue-50 dark:hover:bg-blue-900/30 text-blue-600 dark:text-blue-300">注册为概念</button>
           <button onClick={() => register('character')} className="block w-full text-left px-4 py-1.5 hover:bg-blue-50 dark:hover:bg-blue-900/30 text-blue-600 dark:text-blue-300">注册为人物</button>
