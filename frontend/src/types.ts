@@ -107,6 +107,89 @@ export interface ExportSettings {
   chapterTailBlank: number
 }
 
+export type SyncEntryState =
+  | 'app-new'
+  | 'md-new'
+  | 'app-changed'
+  | 'md-changed'
+  | 'conflict'
+  | 'md-deleted'
+  | 'app-deleted'
+  | 'md-moved'
+  | 'converged'
+  | 'unchanged'
+  | 'error'
+  | 'ignored'
+
+export type SyncAction =
+  | 'export'
+  | 'import'
+  | 'keep-app'
+  | 'keep-md'
+  | 'delete-app'
+  | 'delete-md'
+  | 'acknowledge'
+  | 'skip'
+  | 'ignore-md'
+
+export interface SyncSummary {
+  title?: string
+  name?: string
+  order?: number
+  volume?: string
+  beatCount?: number
+  beats?: string[]
+  type?: string
+  aliases?: string[]
+  description?: string
+}
+
+export interface SyncEntry {
+  key: string
+  kind: 'chapter' | 'concept'
+  entityId: string
+  state: SyncEntryState
+  defaultAction: SyncAction
+  name: string
+  path: string
+  appHash: string | null
+  mdHash: string | null
+  appSummary: SyncSummary | null
+  mdSummary: SyncSummary | null
+  warnings: string[]
+}
+
+export interface SyncScanResult {
+  mdRoot: string
+  lastSyncAt: string
+  entries: SyncEntry[]
+  counts: Record<string, number>
+  warnings: string[]
+}
+
+export interface SyncSettings {
+  mdRoot: string
+  lastSyncAt: string
+  valid: boolean
+  entryCount: number
+}
+
+export interface SyncDecision {
+  key: string
+  action: SyncAction
+  expectedAppHash: string | null
+  expectedMdHash: string | null
+}
+
+export interface SyncApplyResult {
+  applied: number
+  skipped: number
+  errors: { key: string; message: string }[]
+  stale: { key: string; message: string }[]
+  warnings: string[]
+  project: ProjectData
+}
+
 export interface ProjectData {
   project: {
     schemaVersion: number

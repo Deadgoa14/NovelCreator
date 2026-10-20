@@ -18,6 +18,7 @@ import { AiSettingsPage } from './pages/AiSettingsPage'
 import { RawAnalysisPage } from './pages/RawAnalysisPage'
 import { MdImportPage } from './pages/MdImportPage'
 import { TxtImportPage } from './pages/TxtImportPage'
+import { SyncPage } from './pages/SyncPage'
 import { TrashPage } from './pages/TrashPage'
 import { TtsPage } from './pages/TtsPage'
 
@@ -110,6 +111,7 @@ export default function App() {
             {activePage === 'raw' && <RawAnalysisPage />}
             {activePage === 'mdimport' && <MdImportPage />}
             {activePage === 'txtimport' && <TxtImportPage />}
+            {activePage === 'sync' && <SyncPage />}
             {activePage === 'trash' && <TrashPage />}
             {activePage === 'tts' && <TtsPage />}
             {activePage === 'ai' && <AiSettingsPage />}

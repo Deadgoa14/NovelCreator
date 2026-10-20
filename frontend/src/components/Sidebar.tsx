@@ -6,6 +6,7 @@ const TABS: { id: Page; label: string; icon: string }[] = [
   { id: 'raw', label: '生文本分析', icon: '🔬' },
   { id: 'mdimport', label: '导入 Markdown', icon: '📥' },
   { id: 'txtimport', label: '导入 TXT', icon: '📄' },
+  { id: 'sync', label: 'Obsidian 同步', icon: '🔄' },
   { id: 'trash', label: '废纸篓', icon: '🗑️' },
   { id: 'tts', label: '朗读', icon: '🔊' },
   { id: 'nodes', label: '章节目录', icon: '📄' },

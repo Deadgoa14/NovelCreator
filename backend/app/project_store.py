@@ -2,6 +2,7 @@
 import json
 import os
 import re
+import tempfile
 from datetime import datetime, timezone
 
 PROJECT_FILE = "project.json"
@@ -15,6 +16,8 @@ CONNECTIONS_FILE = "connections.json"
 TRASH_FILE = "trash.json"
 NODES_DIR = "nodes"
 EXPORT_SETTINGS_FILE = "export-settings.json"
+SYNC_FILE = "sync-settings.json"
+SYNC_BACKUP_DIR = ".sync-backups"
 
 # Legacy (pre-folder) files, kept only for one-time migration.
 LEGACY_CONCEPTS_FILE = "concepts.json"
@@ -58,10 +61,28 @@ def read_json_file(filename, default=None):
         return json.load(f)
 
 
+def atomic_write_text(path, text):
+    """Write UTF-8 text atomically (temp file in the same dir + os.replace)."""
+    d = os.path.dirname(path) or "."
+    os.makedirs(d, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(prefix=".nc-tmp-", dir=d)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as f:
+            f.write(text)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, path)
+    except Exception:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+
+
 def write_json_file(filename, data):
     fp = os.path.join(get_current_path(), filename)
-    with open(fp, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
+    atomic_write_text(fp, json.dumps(data, ensure_ascii=False, indent=2))
 
 
 def read_export_settings():
@@ -133,6 +154,7 @@ def create_project(path, name):
     write_json_file(CONNECTIONS_FILE, {"connections": []})
     write_json_file(TRASH_FILE, {"trash": []})
     write_json_file(EXPORT_SETTINGS_FILE, dict(DEFAULT_EXPORT_SETTINGS))
+    write_json_file(SYNC_FILE, {"mdRoot": "", "lastSyncAt": "", "ignoredPaths": [], "entries": {}})
     from . import recent_store
 
     recent_store.record(path, name or os.path.basename(path))

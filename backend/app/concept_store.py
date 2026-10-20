@@ -5,7 +5,7 @@ import threading
 
 from . import node_store, project_store as ps
 
-_lock = threading.Lock()
+_lock = threading.RLock()
 
 
 def _concepts_dir():
@@ -25,8 +25,7 @@ def _write_concept_file(concept):
     """Write one concept to a name-derived file. Used by migration too."""
     ps.ensure_concepts_dir()
     stem = ps.unique_stem(_concepts_dir(), concept.get("name", ""))
-    with open(_concept_path(stem), "w", encoding="utf-8") as f:
-        json.dump(concept, f, ensure_ascii=False, indent=2)
+    ps.atomic_write_text(_concept_path(stem), json.dumps(concept, ensure_ascii=False, indent=2))
 
 
 def list_concepts():
@@ -93,8 +92,7 @@ def update_concept(concept_id, concept):
             if os.path.abspath(new_fp) != os.path.abspath(fp):
                 os.remove(fp)
                 fp = new_fp
-        with open(fp, "w", encoding="utf-8") as f:
-            json.dump(concept, f, ensure_ascii=False, indent=2)
+        ps.atomic_write_text(fp, json.dumps(concept, ensure_ascii=False, indent=2))
     ps.touch_project()
     return concept
 
@@ -111,6 +109,11 @@ def delete_concept(concept_id):
             if r.get("from") != concept_id and r.get("to") != concept_id
         ]
         ps.write_json_file(ps.RELATIONS_FILE, data)
+        # Drop dangling tag references from the remaining concepts.
+        for c in list_concepts():
+            tags = c.get("tags") or []
+            if concept_id in tags:
+                update_concept(c["id"], {**c, "tags": [t for t in tags if t != concept_id]})
     ps.touch_project()
 
 

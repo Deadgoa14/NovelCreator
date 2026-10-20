@@ -15,7 +15,7 @@ import type {
   WhiteboardItem,
 } from './types'
 
-export type Page = 'raw' | 'mdimport' | 'txtimport' | 'ai' | 'nodes' | 'whiteboard' | 'concepts' | 'characters' | 'relations' | 'export' | 'trash' | 'tts' | 'settings'
+export type Page = 'raw' | 'mdimport' | 'txtimport' | 'sync' | 'ai' | 'nodes' | 'whiteboard' | 'concepts' | 'characters' | 'relations' | 'export' | 'trash' | 'tts' | 'settings'
 
 export interface CurrentNode {
   id: string

@@ -24,8 +24,7 @@ def _path(stem):
 def _write_volume_file(volume):
     ps.ensure_volumes_dir()
     stem = ps.unique_stem(_dir(), volume.get("name", ""))
-    with open(_path(stem), "w", encoding="utf-8") as f:
-        json.dump(volume, f, ensure_ascii=False, indent=2)
+    ps.atomic_write_text(_path(stem), json.dumps(volume, ensure_ascii=False, indent=2))
 
 
 def list_volumes():
@@ -104,8 +103,7 @@ def update_volume(volume_id, patch):
             if os.path.abspath(new_fp) != os.path.abspath(fp):
                 os.remove(fp)
                 fp = new_fp
-        with open(fp, "w", encoding="utf-8") as f:
-            json.dump(volume, f, ensure_ascii=False, indent=2)
+        ps.atomic_write_text(fp, json.dumps(volume, ensure_ascii=False, indent=2))
     ps.touch_project()
     return volume
 
@@ -120,8 +118,7 @@ def set_chapters(volume_id, chapters):
         with open(fp, encoding="utf-8") as f:
             volume = json.load(f)
         volume["chapters"] = chapters
-        with open(fp, "w", encoding="utf-8") as f:
-            json.dump(volume, f, ensure_ascii=False, indent=2)
+        ps.atomic_write_text(fp, json.dumps(volume, ensure_ascii=False, indent=2))
     ps.touch_project()
     return volume
 
@@ -178,5 +175,4 @@ def migrate_legacy_order():
             chapters.sort(key=lambda nid: node_order.get(nid, 0))
             v["chapters"] = chapters
             v.pop("order", None)
-            with open(fp, "w", encoding="utf-8") as f:
-                json.dump(v, f, ensure_ascii=False, indent=2)
+            ps.atomic_write_text(fp, json.dumps(v, ensure_ascii=False, indent=2))

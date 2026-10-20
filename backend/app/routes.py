@@ -1,8 +1,9 @@
 """FastAPI routes for the novel studio backend."""
+import os
 import subprocess
 from typing import Any, List, Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
@@ -12,11 +13,13 @@ from . import (
     concept_store,
     connection_store,
     export as export_mod,
+    md_sync,
     node_store,
     project_store as ps,
     recent_store,
     rename as rename_mod,
     storyline_store,
+    sync_store,
     trash_store,
     usage_store,
     volume_store,
@@ -166,8 +169,34 @@ class RecentRemoveReq(BaseModel):
     path: str
 
 
+class SyncSettingsReq(BaseModel):
+    mdRoot: str = ""
+
+
+class SyncDecision(BaseModel):
+    key: str
+    action: str = "skip"
+    expectedAppHash: Optional[str] = None
+    expectedMdHash: Optional[str] = None
+
+
+class SyncApplyReq(BaseModel):
+    entries: List[SyncDecision] = Field(default_factory=list)
+
+
 def _http(err):
     return HTTPException(status_code=400, detail=str(err))
+
+
+def _local_only(request: Request):
+    """Reject LAN clients for endpoints that read/write arbitrary local paths.
+
+    The server binds 0.0.0.0 so phones on the same WiFi can use the editor; that
+    must not also grant them the native folder picker or the sync engine.
+    """
+    host = (request.client.host if request.client else "") or ""
+    if host not in {"127.0.0.1", "::1", "::ffff:127.0.0.1", "localhost"}:
+        raise HTTPException(status_code=403, detail="该操作仅限本机访问")
 
 
 def _pick_directory():
@@ -239,7 +268,8 @@ def remove_recent(req: RecentRemoveReq):
 
 
 @router.post("/picker/dir")
-def pick_directory():
+def pick_directory(request: Request):
+    _local_only(request)
     return {"path": _pick_directory()}
 
 
@@ -528,6 +558,77 @@ def get_export_settings():
 @router.put("/export-settings")
 def save_export_settings(req: ExportSettingsReq):
     return ps.write_export_settings(req.model_dump())
+
+
+# ---------------------------------------------------------------- obsidian sync
+def _sync_settings_payload(s):
+    root = s.get("mdRoot") or ""
+    return {
+        "mdRoot": root,
+        "lastSyncAt": s.get("lastSyncAt") or "",
+        "valid": bool(root and os.path.isdir(root)),
+        "entryCount": len(s.get("entries") or {}),
+    }
+
+
+@router.get("/sync/settings")
+def get_sync_settings(request: Request):
+    _local_only(request)
+    return _sync_settings_payload(sync_store.read_settings())
+
+
+@router.put("/sync/settings")
+def save_sync_settings(req: SyncSettingsReq, request: Request):
+    _local_only(request)
+    settings = sync_store.read_settings()
+    root = (req.mdRoot or "").strip()
+    if not root:
+        settings.update({"mdRoot": "", "lastSyncAt": "", "entries": {}, "ignoredPaths": []})
+        sync_store.write_settings(settings)
+        return _sync_settings_payload(settings)
+    try:
+        root = sync_store.validate_root(root)
+        sync_store.ensure_layout(root)
+        sync_store.check_marker(root)
+        sync_store.write_marker(root)
+    except ps.ProjectError as e:
+        raise _http(e)
+    if os.path.normcase(root) != os.path.normcase(settings.get("mdRoot") or ""):
+        settings.update({"entries": {}, "lastSyncAt": "", "ignoredPaths": []})
+    settings["mdRoot"] = root
+    sync_store.write_settings(settings)
+    return _sync_settings_payload(settings)
+
+
+@router.post("/sync/scan")
+def scan_sync(request: Request):
+    _local_only(request)
+    try:
+        return md_sync.public_plan(md_sync.build_plan())
+    except ps.ProjectError as e:
+        raise _http(e)
+    except Exception as e:
+        raise _http(f"扫描失败：{e}")
+
+
+@router.post("/sync/apply")
+def apply_sync(req: SyncApplyReq, request: Request):
+    _local_only(request)
+    try:
+        return md_sync.apply_plan([d.model_dump() for d in req.entries])
+    except ps.ProjectError as e:
+        raise _http(e)
+    except Exception as e:
+        raise _http(f"同步失败：{e}")
+
+
+@router.post("/sync/reset")
+def reset_sync(request: Request):
+    _local_only(request)
+    settings = sync_store.read_settings()
+    settings.update({"entries": {}, "lastSyncAt": "", "ignoredPaths": []})
+    sync_store.write_settings(settings)
+    return {"ok": True}
 
 
 # ---------------------------------------------------------------- ai

@@ -1,4 +1,4 @@
-import type { Beat, Concept, Connection, ExportSettings, NodeDetail, NodeSummary, Point, ProjectData, Question, Relation, Storyline, TrashEntry, Volume } from './types'
+import type { Beat, Concept, Connection, ExportSettings, NodeDetail, NodeSummary, Point, ProjectData, Question, Relation, Storyline, SyncApplyResult, SyncDecision, SyncScanResult, SyncSettings, TrashEntry, Volume } from './types'
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const res = await fetch(path, {
@@ -263,6 +263,14 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ kind, format }),
     }),
+
+  getSyncSettings: () => request<SyncSettings>('/api/sync/settings'),
+  saveSyncSettings: (mdRoot: string) =>
+    request<SyncSettings>('/api/sync/settings', { method: 'PUT', body: JSON.stringify({ mdRoot }) }),
+  scanSync: () => request<SyncScanResult>('/api/sync/scan', { method: 'POST' }),
+  applySync: (entries: SyncDecision[]) =>
+    request<SyncApplyResult>('/api/sync/apply', { method: 'POST', body: JSON.stringify({ entries }) }),
+  resetSync: () => request<{ ok: boolean }>('/api/sync/reset', { method: 'POST' }),
 
   shutdown: () => request<{ ok: boolean }>('/api/shutdown', { method: 'POST' }),
   heartbeat: () => request<{ ok: boolean }>('/api/heartbeat', { method: 'POST' }),

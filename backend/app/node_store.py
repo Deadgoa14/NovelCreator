@@ -89,15 +89,17 @@ def get_node(node_id):
     return {"id": node_id, "meta": meta, "body": body}
 
 
-def create_node(title=""):
-    node_id = new_id("node")
+def create_node(title="", node_id=None, order=None):
+    node_id = node_id or new_id("node")
     with _lock:
+        if os.path.exists(_node_path(node_id)):
+            raise ps.ProjectError("剧情节点已存在")
         # Always place new nodes at the very bottom (max order + 1),
         # never relative to any currently-selected node.
         meta = {
             "id": node_id,
             "title": title or "未命名节点",
-            "order": max_order() + 1,
+            "order": int(order) if isinstance(order, int) else (max_order() + 1),
             "beats": [],
             "characters": [],
         }
@@ -237,5 +239,4 @@ def migrate_positions_to_whiteboard():
 def _write_node(node_id, meta, body):
     os.makedirs(_nodes_dir(), exist_ok=True)
     text = serialize_node(meta, body)
-    with open(_node_path(node_id), "w", encoding="utf-8") as f:
-        f.write(text)
+    ps.atomic_write_text(_node_path(node_id), text)
